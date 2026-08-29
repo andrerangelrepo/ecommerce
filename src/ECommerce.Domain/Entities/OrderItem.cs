@@ -9,6 +9,7 @@ public class OrderItem
     /// Initializes a new instance of the <see cref="OrderItem"/> class.
     /// </summary>
     /// <param name="id">The item identifier.</param>
+    /// <param name="orderId">The order identifier.</param>
     /// <param name="productName">The product name.</param>
     /// <param name="quantity">The quantity ordered.</param>
     /// <param name="unitPrice">The price of one unit.</param>
@@ -17,6 +18,7 @@ public class OrderItem
     /// </exception>
     public OrderItem(
         Guid id,
+        Guid orderId,
         string productName,
         int quantity,
         decimal unitPrice)
@@ -32,6 +34,7 @@ public class OrderItem
         }
 
         Id = id;
+        OrderId = orderId;
         ProductName = productName;
         Quantity = quantity;
         UnitPrice = unitPrice;

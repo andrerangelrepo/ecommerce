@@ -21,7 +21,7 @@ public class Order
     public Order(
         Guid id,
         Guid customerId,
-        IEnumerable<OrderItem> items)
+        IEnumerable<(string ProductName, int Quantity, decimal UnitPrice)> items)
     {
         var orderItems = items.ToList();
 
@@ -35,7 +35,10 @@ public class Order
         Status = OrderStatus.Pending;
         CreatedAt = DateTime.UtcNow;
 
-        _items.AddRange(orderItems);
+        foreach (var item in orderItems)
+        {
+            AddItem(item.ProductName, item.Quantity, item.UnitPrice);
+        }
     }
 
     /// <summary>Gets the order identifier.</summary>
@@ -57,10 +60,22 @@ public class Order
     public decimal TotalAmount =>
         _items.Sum(item => item.UnitPrice * item.Quantity);
 
-    /// <summary>Adds an item to the order.</summary>
-    /// <param name="item">The item to add.</param>
-    public void AddItem(OrderItem item)
+    /// <summary>Creates and adds an item to the order.</summary>
+    /// <param name="productName">The product name.</param>
+    /// <param name="quantity">The quantity ordered.</param>
+    /// <param name="unitPrice">The price of one unit.</param>
+    public void AddItem(
+        string productName,
+        int quantity,
+        decimal unitPrice)
     {
+        var item = new OrderItem(
+            Guid.NewGuid(),
+            Id,
+            productName,
+            quantity,
+            unitPrice);
+
         _items.Add(item);
     }
 
