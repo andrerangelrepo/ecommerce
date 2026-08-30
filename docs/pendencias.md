@@ -8,23 +8,23 @@ Marcar `[x]` conforme cada item for implementado.
 
 ## 1. Docker (Stack Obrigatória)
 
-- [ ] `Dockerfile`
-  - [ ] multi-stage build
-  - [ ] SDK do .NET presente somente na etapa de build
-  - [ ] imagem final contém apenas o runtime
-  - [ ] nenhum segredo (ex.: `Jwt:Key`) hardcoded na imagem
-- [ ] `docker-compose.yml`
-  - [ ] serviço da API
-  - [ ] SQLite permanece embarcado (sem container de banco separado)
-  - [ ] volume para o arquivo SQLite, se necessário para persistir entre restarts do container
-  - [ ] `Jwt:Key` (e demais segredos) injetados via variável de ambiente, não hardcoded no compose
+- [x] `Dockerfile` ([Dockerfile](../Dockerfile))
+  - [x] multi-stage build — testado com `docker build`, cache de `restore` confirmado
+  - [x] SDK do .NET presente somente na etapa de build
+  - [x] imagem final contém apenas o runtime — confirmado por inspeção do container (`dotnet --list-sdks` vazio, sem `/src`)
+  - [x] nenhum segredo (ex.: `Jwt:Key`) hardcoded na imagem — a chave vem só via `Jwt__Key` no `docker-compose.yml`, nunca do Dockerfile/imagem
+- [x] `docker-compose.yml` ([docker-compose.yml](../docker-compose.yml))
+  - [x] serviço da API
+  - [x] SQLite permanece embarcado (sem container de banco separado)
+  - [x] volume para o arquivo SQLite — testado com container removido (`down` sem `-v`) e recriado, dados persistiram
+  - [x] `Jwt:Key` (e demais segredos) injetados via variável de ambiente, não hardcoded no compose — `Jwt__Key: "development-only-key-change-in-production"`, testado com um token assinado com a chave do `appsettings.json` sendo rejeitado (`401`), confirmando que o override é o valor efetivo
 
 ## 2. README — instruções de execução via Docker (Stack Obrigatória)
 
-- [ ] Seção "Executar com Docker" no README
-  - [ ] comando de build da imagem
-  - [ ] comando de subida via `docker-compose`
-  - [ ] variáveis de ambiente necessárias (ex.: `Jwt__Key`) e como fornecê-las
+- [x] Seção "Executar com Docker" no README ([README.md](../README.md))
+  - [ ] comando de build da imagem isolado (`docker build`) — hoje só documentado via `docker compose up --build`, que já builda e sobe junto
+  - [x] comando de subida via `docker compose`, incluindo a diferença entre `down` e `down -v`
+  - [x] variáveis de ambiente necessárias (`Jwt__Key`) e como fornecê-las
 
 ## 3. Testes unitários de todos os Handlers (Stack Obrigatória / "O que Não Fazer")
 

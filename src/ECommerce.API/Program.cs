@@ -60,6 +60,7 @@ builder.Services
         };
     });
 builder.Services.AddAuthorization();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
@@ -77,6 +78,7 @@ if (app.Environment.IsDevelopment())
         options.SwaggerEndpoint("/openapi/v1.json", "ECommerce API v1"));
 }
 
+app.MapHealthChecks("/health");
 app.MapAuthEndpoints();
 app.MapOrderEndpoints();
 

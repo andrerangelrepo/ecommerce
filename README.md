@@ -59,6 +59,32 @@ dotnet build
 dotnet test
 ```
 
+### Executar com Docker
+
+```bash
+docker compose up --build
+```
+
+A API fica disponível em `http://localhost:8080`. O SQLite (`orders.db`) vive num volume Docker nomeado (`order-data`), montado em `/app/data` dentro do container — as migrations (`Database.MigrateAsync()`) aplicam automaticamente no startup, sem passo manual.
+
+`docker-compose.yml` sobrescreve `Jwt:Key` via variável de ambiente (`Jwt__Key`) com um valor de desenvolvimento — nunca use esse valor em produção. Fora do Docker, `dotnet run` continua usando o placeholder de `appsettings.json`.
+
+Para parar:
+
+```bash
+docker compose down
+```
+
+Isso remove o container, mas **mantém o volume** — os dados persistem. Na próxima subida (`docker compose up`), o mesmo `orders.db` é reaproveitado, migrations já aplicadas não são reexecutadas, e os pedidos criados anteriormente continuam lá.
+
+Para apagar também o banco (recomeçar do zero):
+
+```bash
+docker compose down -v
+```
+
+O `-v` remove o volume nomeado junto com o container — útil para quem está avaliando o projeto e quer testar a primeira inicialização (criação do schema do zero) de novo.
+
 ## Decisões Técnicas
 
 ### Por que Minimal API?
