@@ -94,6 +94,8 @@ public sealed class CancelOrderIntegrationTests : IClassFixture<CustomWebApplica
         var loginResponse = await _client.PostAsJsonAsync(
             "/auth/login",
             new LoginRequest("dev@martech.com", "Senha@123"));
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
         var login = await loginResponse.Content.ReadFromJsonAsync<LoginResponse>();
 
         _client.DefaultRequestHeaders.Authorization =

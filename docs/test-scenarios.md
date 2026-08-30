@@ -805,6 +805,7 @@ Os cenários marcados `[x]` acima foram validados manualmente (runtime) ao longo
 | `POST /api/orders` — persistência via `AddAsync`, mapeamento `Order` → `CreateOrderResult`, `CancellationToken` propagado | [`CreateOrderCommandHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandHandlerTests.cs) |
 | `GET /api/orders` — validação de `page`/`pageSize` (`<= 0`) | [`GetOrdersQueryValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryValidatorTests.cs) |
 | Fluxo completo `POST → GET → PATCH cancel → GET`, e cancelamento repetido (`409`) | [`CancelOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CancelOrderIntegrationTests.cs) |
+| `POST /api/orders` fim a fim — sem token (`401`), payload inválido via pipeline real (`400`), criação + releitura provando persistência real com `TotalAmount`/`TotalPrice` calculados pelo domínio | [`CreateOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CreateOrderIntegrationTests.cs) |
 | Invariantes do Domain: sem itens, `Quantity`/`UnitPrice` zero ou negativo, `TotalAmount`, status inicial `Pending`, `Order.Cancel()` (`Pending`/`Cancelled`/`Confirmed`) — CT-DOMAIN-01 a 10 | [`OrderTests.cs`](../tests/ECommerce.Application.Tests/Domain/Entities/OrderTests.cs) |
 
 Todos os quatro Handlers (`CreateOrder`, `GetOrderById`, `GetOrders`, `CancelOrder`) e os validators relevantes (`CreateOrderCommand`, `GetOrdersQuery`) têm teste unitário dedicado — gap fechado na TASK 10.
