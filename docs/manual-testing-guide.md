@@ -1,10 +1,10 @@
-# Cenários de Teste — API de Pedidos
+# Guia de Testes Manuais — API de Pedidos
 
-Checklist de cenários de teste para todos os endpoints, um grupo por endpoint, organizado por response HTTP possível. Cada cenário traz o `curl` para reproduzir e o corpo de resposta esperado.
+Referenciado a partir do [README](../README.md#rodando-os-cenários). Checklist de cenários de teste para todos os endpoints, um grupo por endpoint, organizado por response HTTP possível. Cada cenário traz o `curl` para reproduzir e o corpo de resposta esperado — útil tanto para reproduzir manualmente (Swagger/Postman/`curl`) quanto como referência do contrato de cada endpoint.
 
 Marcar `[x]` quando o cenário foi validado (manualmente ou por teste automatizado) e o comportamento bate com o esperado. Cenários com gap conhecido ficam `[ ]` com uma nota explicando o desvio — não marcar até corrigir.
 
-Base URL usada nos exemplos: `http://localhost:5000` (porta padrão do perfil `http` em `launchSettings.json`).
+Base URL usada nos exemplos: `http://localhost:5000` rodando localmente (`dotnet run`), ou `http://localhost:8080` via Docker (`docker compose up`) — troque a porta conforme como você subiu a aplicação.
 
 ## Setup — obter um token
 

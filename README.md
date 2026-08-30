@@ -2,6 +2,19 @@
 
 Backend API para um e-commerce simples, implementado em .NET 10 com Clean Architecture, CQRS + MediatR e Minimal API.
 
+## Sumário
+
+- [Arquitetura](#arquitetura)
+- [Stack Técnico](#stack-técnico)
+- [Como Rodar — Passo a Passo](#como-rodar--passo-a-passo)
+- [Autenticação](#autenticação)
+- [Endpoints](#endpoints)
+- [Migrations](#migrations)
+- [Testes](#testes)
+- [Decisões Técnicas](#decisões-técnicas)
+- [Status do Projeto e Trade-offs Conscientes](#status-do-projeto-e-trade-offs-conscientes)
+- [Notas de Segurança](#notas-de-segurança)
+
 ## Arquitetura
 
 O projeto segue **Clean Architecture** com as seguintes camadas:
@@ -35,55 +48,201 @@ Application + Infrastructure ← Api
 - **CQRS + MediatR** — separação clara entre Commands e Queries
 - **FluentValidation** — validação de entrada via Pipeline Behavior
 - **Entity Framework Core 9.0** — persistência (SQLite)
+- **JWT Bearer** — autenticação stateless, usuário fixo em memória
 - **OpenAPI nativo + Swagger UI** — contrato gerado pelo ASP.NET Core com interface interativa em Development
-- **xUnit** — testes unitários
+- **xUnit + Moq + FluentAssertions** — testes unitários e de integração (50 testes)
+- **Docker + Docker Compose** — build multi-stage, persistência via volume nomeado
 - **Central Package Management (CPM)** — versionamento centralizado
 
-## Configuração Inicial
+## Como Rodar — Passo a Passo
 
-### Pré-requisitos
+Duas formas de subir a aplicação: **local** (`dotnet run`) ou **Docker** (`docker compose`). Escolha uma.
 
-- .NET 10 SDK
-- Visual Studio 2022 ou VS Code
+### 1. Pré-requisitos
 
-### Restaurar e compilar
+- **Local:** .NET 10 SDK
+- **Docker:** Docker Desktop (ou engine + compose plugin) — não precisa do SDK instalado
+
+### 2. Preparar o ambiente
 
 ```bash
+git clone <url-do-repositório>
+cd ecommerce
 dotnet restore
-dotnet build
 ```
 
-### Executar testes
+### 3a. Rodar localmente
 
 ```bash
-dotnet test
+dotnet run --project src/ECommerce.API
 ```
 
-### Executar com Docker
+A API sobe em `http://localhost:5000` (perfil `http` de `launchSettings.json`). O SQLite (`orders.db`) é criado no diretório do projeto (`src/ECommerce.API/orders.db`) e as migrations aplicam automaticamente no startup — nenhum passo manual.
+
+### 3b. Rodar com Docker
 
 ```bash
 docker compose up --build
 ```
 
-A API fica disponível em `http://localhost:8080`. O SQLite (`orders.db`) vive num volume Docker nomeado (`order-data`), montado em `/app/data` dentro do container — as migrations (`Database.MigrateAsync()`) aplicam automaticamente no startup, sem passo manual.
+A API sobe em `http://localhost:8080`. Mesmo comportamento de migrations automáticas; o SQLite fica num volume Docker nomeado (`order-data`), não no filesystem do host. Detalhes de persistência, variáveis de ambiente e o ciclo `down`/`down -v` estão na subseção [Docker em detalhe](#docker-em-detalhe) abaixo.
 
-`docker-compose.yml` sobrescreve `Jwt:Key` via variável de ambiente (`Jwt__Key`) com um valor de desenvolvimento — nunca use esse valor em produção. Fora do Docker, `dotnet run` continua usando o placeholder de `appsettings.json`.
+### 4. Abrir o Swagger
 
-Para parar:
+Com a aplicação em execução (local ou Docker), acesse:
 
-```bash
-docker compose down
+```
+http://localhost:5000/swagger   (local)
+http://localhost:8080/swagger   (Docker)
 ```
 
-Isso remove o container, mas **mantém o volume** — os dados persistem. Na próxima subida (`docker compose up`), o mesmo `orders.db` é reaproveitado, migrations já aplicadas não são reexecutadas, e os pedidos criados anteriormente continuam lá.
+O Swagger UI só fica disponível em `Development` (que é o ambiente padrão tanto local quanto no `docker-compose.yml`). É a forma mais rápida de explorar os endpoints sem precisar de Postman — cada rota já vem com o schema de request/response, e o botão **Authorize** aceita o JWT direto (veja o passo 5).
 
-Para apagar também o banco (recomeçar do zero):
+Se preferir Postman/Insomnia em vez do Swagger, importe o contrato OpenAPI em `http://localhost:5000/openapi/v1.json` (ou `:8080` no Docker) — a maioria dos clientes HTTP importa OpenAPI/Swagger nativamente.
 
-```bash
-docker compose down -v
+### 5. Autenticar
+
+Credencial fixa (não há cadastro de usuário neste desafio):
+
+```json
+{
+  "email": "dev@martech.com",
+  "password": "Senha@123"
+}
 ```
 
-O `-v` remove o volume nomeado junto com o container — útil para quem está avaliando o projeto e quer testar a primeira inicialização (criação do schema do zero) de novo.
+**Via Swagger:** rode `POST /auth/login` com o corpo acima, copie o `accessToken` da resposta, clique em **Authorize** (canto superior direito) e cole `Bearer <token>`.
+
+**Via curl:**
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:5000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dev@martech.com","password":"Senha@123"}' \
+  | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+```
+
+Detalhes de como o JWT é validado (issuer, audience, expiração, assinatura) estão em [Autenticação](#autenticação).
+
+### 6. Rodando os Cenários
+
+Um fluxo completo mínimo, pra confirmar que tudo está funcionando:
+
+```bash
+# criar um pedido
+curl -s -X POST http://localhost:5000/api/orders \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"customerId":"11111111-1111-1111-1111-111111111111","items":[{"productName":"Teclado","quantity":1,"unitPrice":350}]}'
+
+# listar pedidos
+curl -s "http://localhost:5000/api/orders?page=1&pageSize=10" -H "Authorization: Bearer $TOKEN"
+
+# buscar por id (troque {id} pelo retornado no POST)
+curl -s http://localhost:5000/api/orders/{id} -H "Authorization: Bearer $TOKEN"
+
+# cancelar
+curl -s -X PATCH http://localhost:5000/api/orders/{id}/cancel -H "Authorization: Bearer $TOKEN"
+```
+
+Para o catálogo completo — todos os endpoints, todos os status HTTP possíveis (`200`/`201`/`400`/`401`/`404`/`409`), com `curl` e corpo de resposta esperado para cada cenário — veja **[docs/manual-testing-guide.md](docs/manual-testing-guide.md)**.
+
+### 7. Ver os dados no banco (opcional)
+
+O banco é SQLite; qualquer cliente SQLite serve, incluindo o [DB Browser for SQLite](https://sqlitebrowser.org/) (gratuito, GUI).
+
+**Local:** abra `src/ECommerce.API/orders.db` diretamente.
+
+**Docker:** o arquivo vive dentro do volume nomeado `order-data`, não no host. Duas formas de acessar:
+
+```bash
+# copiar o arquivo do container para o host
+docker cp ecommerce-api-1:/app/data/orders.db ./orders.db
+
+# ou inspecionar direto dentro do container
+docker compose exec api sh
+# dentro do container, o arquivo está em /app/data/orders.db
+```
+
+Schema (tabelas `Orders` e `OrderItems`, com `Status` gravado como inteiro do enum):
+
+```sql
+SELECT * FROM Orders ORDER BY CreatedAt DESC;
+
+SELECT o.Id, o.Status, i.ProductName, i.Quantity, i.UnitPrice
+FROM Orders o JOIN OrderItems i ON i.OrderId = o.Id;
+```
+
+### 8. Rodar os testes automatizados
+
+```bash
+dotnet test
+```
+
+Roda os dois projetos de teste juntos (50 testes). Para rodar isoladamente:
+
+```bash
+dotnet test tests/ECommerce.Application.Tests  # 42 testes — rápidos, isolados (mocks, sem I/O real)
+dotnet test tests/ECommerce.IntegrationTests   # 8 testes — WebApplicationFactory, SQLite real
+```
+
+Detalhes de cada modalidade de teste em [Testes](#testes).
+
+### Docker em detalhe
+
+```bash
+docker compose up --build   # sobe, aplicando migrations automaticamente
+docker compose down         # para o container, MANTÉM o volume (dados persistem)
+docker compose down -v      # para e APAGA o volume (reset completo — útil pra testar a primeira inicialização de novo)
+```
+
+`docker-compose.yml` sobrescreve `Jwt:Key` via variável de ambiente (`Jwt__Key`) com um valor de desenvolvimento — nunca use esse valor em produção. Fora do Docker, `dotnet run` usa o placeholder de `appsettings.json`. O container roda como usuário não-root (`app`, uid 1654) e expõe um health check em `GET /health` (`docker compose ps` mostra `(healthy)`).
+
+## Autenticação
+
+- **Credencial fixa** (usuário em memória, sem cadastro): `dev@martech.com` / `Senha@123` — comparação de email é case-insensitive, senha é case-sensitive.
+- `POST /auth/login` é o único endpoint anônimo; todos os `/api/orders*` exigem `Authorization: Bearer <token>`.
+- O JWT carrega `sub`/`email` (identidade), `jti` (id único do token) e `exp` (expiração — configurável via `Jwt:ExpirationMinutes`, padrão 60 min).
+- Validação no servidor cobre assinatura, issuer, audience e expiração, sem tolerância de relógio (`ClockSkew = TimeSpan.Zero`) — um token expirado há 1 segundo já é rejeitado. Detalhes e o porquê de cada escolha em [Decisões Técnicas](#decisões-técnicas).
+- A chave de assinatura (`Jwt:Key`) nunca é hardcoded no Dockerfile/imagem — vem de configuração (`appsettings.json` localmente, variável de ambiente no Docker). Ver [Notas de Segurança](#notas-de-segurança).
+
+## Endpoints
+
+| Método | Rota | Autenticação | Descrição |
+|---|---|:---:|---|
+| `POST` | `/auth/login` | ❌ | Autentica e retorna um JWT |
+| `POST` | `/api/orders` | ✅ | Cria um pedido |
+| `GET` | `/api/orders?page=&pageSize=` | ✅ | Lista pedidos paginados |
+| `GET` | `/api/orders/{id}` | ✅ | Busca um pedido por id |
+| `PATCH` | `/api/orders/{id}/cancel` | ✅ | Cancela um pedido (só `Pending`) |
+| `GET` | `/health` | ❌ | Health check operacional (sem lógica de negócio) |
+
+Cenários completos de cada endpoint (todo status HTTP possível) em [docs/manual-testing-guide.md](docs/manual-testing-guide.md).
+
+## Migrations
+
+- Ferramenta: **EF Core Migrations**, arquivos em `src/ECommerce.Infrastructure/Persistence/Migrations/`.
+- Aplicação: **automática no startup**, via `app.Services.ApplyMigrationsAsync()` em `Program.cs`, que chama `Database.MigrateAsync()` — não existe passo manual (`dotnet ef database update`) nem em execução local nem no Docker.
+- Migration atual: `InitialCreate` (tabelas `Orders` e `OrderItems`, FK com `ON DELETE CASCADE`, `TotalAmount` explicitamente ignorado do mapeamento porque é calculado no domínio, não persistido).
+- Para criar uma nova migration (se o schema mudar):
+
+```bash
+dotnet ef migrations add NomeDaMigration \
+  --project src/ECommerce.Infrastructure \
+  --startup-project src/ECommerce.API
+```
+
+Requer a ferramenta `dotnet-ef` instalada (`dotnet tool install --global dotnet-ef`) — só necessária em desenvolvimento; a imagem Docker de runtime não tem o SDK nem essa ferramenta (por design, ver [Decisões Técnicas](#decisões-técnicas)).
+
+## Testes
+
+**50 testes no total**, divididos em dois projetos com propósitos diferentes:
+
+| Projeto | Testes | O que cobre | Velocidade |
+|---|---:|---|---|
+| `ECommerce.Application.Tests` | 42 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior` | Rápido — sem I/O real, sem HTTP |
+| `ECommerce.IntegrationTests` | 8 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
+
+Nenhum teste depende de banco local pré-existente ou de outro processo já rodando — `dotnet test` sozinho é suficiente, cada teste de integração usa um SQLite isolado descartável.
 
 ## Decisões Técnicas
 
@@ -97,7 +256,7 @@ O `Program.cs` permanece como composition root da aplicação. Endpoints são or
 
 ### Por que manter o `Program.cs` mínimo?
 
-O startup declara apenas a composição necessária para o escopo já implementado: Application, Infrastructure, tratamento global de erros, migrations, documentação da API e endpoints. O suporte e a configuração de JWT são adicionados conforme os requisitos de autenticação; CORS permanece sem configuração antecipada. Isso mantém o composition root legível e evita dependências e configurações sem uso concreto.
+O startup declara apenas a composição necessária para o escopo já implementado: Application, Infrastructure, tratamento global de erros, migrations, documentação da API e endpoints. Isso mantém o composition root legível e evita dependências e configurações sem uso concreto.
 
 ### Por que utilizar o OpenAPI nativo?
 
@@ -113,11 +272,11 @@ A API não expõe entidades do Domain nem retorna diretamente resultados interno
 
 ### Por que utilizar Problem Details?
 
-Erros HTTP utilizam o suporte nativo do ASP.NET Core a Problem Details, seguindo o formato padronizado `application/problem+json`. Isso oferece respostas interoperáveis sem criar envelopes genéricos como `ApiResponse<T>` ou `ErrorResponse<T>`. O tratamento global das exceções será responsável por traduzir cada categoria de falha para o status HTTP apropriado.
+Erros HTTP utilizam o suporte nativo do ASP.NET Core a Problem Details, seguindo o formato padronizado `application/problem+json`. Isso oferece respostas interoperáveis sem criar envelopes genéricos como `ApiResponse<T>` ou `ErrorResponse<T>`.
 
 ### Por que centralizar o tratamento de exceções?
 
-A API utiliza o mecanismo nativo `IExceptionHandler` do ASP.NET Core. Exceções atravessam um único ponto de tradução para Problem Details, são registradas com o contexto da requisição e recebem um `traceId` para correlação. Falhas do FluentValidation produzem HTTP 400 com mensagens agrupadas pelo caminho da propriedade; falhas inesperadas não expõem detalhes internos e produzem HTTP 500. Os endpoints permanecem focados na adaptação HTTP, sem blocos `try/catch` repetidos.
+A API utiliza o mecanismo nativo `IExceptionHandler` do ASP.NET Core. Exceções atravessam um único ponto de tradução para Problem Details, são registradas com o contexto da requisição e recebem um `traceId` para correlação. Falhas do FluentValidation e falhas de binding do Minimal API (`BadHttpRequestException`) produzem HTTP 400; regra de negócio violada (`OrderCannotBeCancelledException`) produz 409; falhas inesperadas não expõem detalhes internos e produzem HTTP 500. Os endpoints permanecem focados na adaptação HTTP, sem blocos `try/catch` repetidos.
 
 ### Por que CQRS?
 
@@ -133,139 +292,70 @@ Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte 
 
 ### Por que não criar `PagedResult<T>`?
 
-`GetOrdersResult` é um record concreto (`Items`, `Page`, `PageSize`, `TotalCount`, `TotalPages`), não uma abstração genérica de paginação. Hoje existe apenas um caso de listagem paginada no projeto; generalizar para `PagedResult<T>` antes de existir um segundo ou terceiro consumidor seria design especulativo — a abstração certa só fica clara depois de ver casos reais o suficiente para saber o que de fato varia entre eles. Se outra listagem paginada surgir, essa decisão é reavaliada então, com exemplos concretos guiando a forma da abstração em vez de suposição antecipada.
+`GetOrdersResult` é um record concreto (`Items`, `Page`, `PageSize`, `TotalCount`, `TotalPages`), não uma abstração genérica de paginação. Hoje existe apenas um caso de listagem paginada no projeto; generalizar para `PagedResult<T>` antes de existir um segundo ou terceiro consumidor seria design especulativo. Se outra listagem paginada surgir, essa decisão é reavaliada então, com exemplos concretos guiando a forma da abstração.
 
 ### Por que não criar `IUnitOfWork`?
 
-`IOrderRepository` continua a única abstração de persistência — `AddAsync`/`UpdateAsync` chamam `SaveChangesAsync` diretamente, sem um `IUnitOfWork`/`ITransactionManager` por cima. Cada caso de uso implementado até agora (criar, cancelar) altera um único aggregate dentro do mesmo `DbContext` por requisição; um Unit of Work explícito só se justificaria coordenando múltiplos repositórios numa mesma transação, cenário que ainda não existe aqui. Introduzir essa camada agora seria abstrair uma necessidade hipotética, não uma real.
+`IOrderRepository` continua a única abstração de persistência — `AddAsync`/`UpdateAsync` chamam `SaveChangesAsync` diretamente, sem um `IUnitOfWork`/`ITransactionManager` por cima. Cada caso de uso implementado (criar, cancelar) altera um único aggregate dentro do mesmo `DbContext` por requisição; um Unit of Work explícito só se justificaria coordenando múltiplos repositórios numa mesma transação, cenário que ainda não existe aqui.
 
 ### Por que um teste de integração HTTP real para confirmar a persistência do cancelamento?
 
-Os testes de Handler (Moq) provam que `UpdateAsync` foi chamado, mas não provam que a alteração sobrevive além de uma única requisição — é só a mesma instância de `DbContext`/mock em memória. Para confirmar de fato que `POST → GET → PATCH cancel → GET` reflete `Cancelled` numa leitura *separada*, foi adicionado `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`), hospedando a API real em processo contra um arquivo SQLite isolado por execução de teste (criado em `Path.GetTempPath()`, apagado no `Dispose`). `Program.cs` ganhou `public partial class Program;` no final — necessário porque top-level statements geram uma classe `Program` `internal` por padrão, e o `WebApplicationFactory<Program>` do projeto de testes precisa enxergá-la. Isso não é uma abstração nova nem generaliza nada; é o único jeito de testar "a mudança foi persistida de verdade" sem depender de inspecionar mocks.
+Os testes de Handler (Moq) provam que `UpdateAsync` foi chamado, mas não provam que a alteração sobrevive além de uma única requisição — é só a mesma instância de `DbContext`/mock em memória. Para confirmar de fato que `POST → GET → PATCH cancel → GET` reflete `Cancelled` numa leitura *separada*, foi adicionado `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`), hospedando a API real em processo contra um arquivo SQLite isolado por execução de teste. `Program.cs` ganhou `public partial class Program;` no final — necessário porque top-level statements geram uma classe `Program` `internal` por padrão, e o `WebApplicationFactory<Program>` do projeto de testes precisa enxergá-la.
 
 ### Por que não tratar concorrência no cancelamento?
 
-`OrderRepository.UpdateAsync` não usa `rowversion`/concurrency token, nem trata `DbUpdateConcurrencyException`, nem há lock distribuído ou retry em volta de `GetByIdForUpdateAsync`/`Cancel()`/`UpdateAsync`. O teste não exige concorrência (múltiplos clientes cancelando o mesmo pedido simultaneamente), e adicionar esse controle agora seria complexidade sem requisito por trás — um `DbUpdateConcurrencyException` nesse cenário hoje se traduziria no `500` genérico do `GlobalExceptionHandler`, o que é aceitável para o escopo atual. Se concorrência real for exigida depois, a mudança fica isolada em `OrderConfiguration` (coluna de token) e no `catch` de `UpdateAsync`, sem afetar Handler ou Domain.
+`OrderRepository.UpdateAsync` não usa `rowversion`/concurrency token, nem trata `DbUpdateConcurrencyException`, nem há lock distribuído ou retry. O teste não exige concorrência (múltiplos clientes cancelando o mesmo pedido simultaneamente), e adicionar esse controle agora seria complexidade sem requisito por trás. Se concorrência real for exigida depois, a mudança fica isolada em `OrderConfiguration` (coluna de token) e no `catch` de `UpdateAsync`, sem afetar Handler ou Domain.
 
 ### Por que Queries retornam `null` em vez de lançar exceção para registro inexistente?
 
-`GetOrderByIdQueryHandler` retorna `GetOrderByIdResult?` e devolve `null` quando o pedido não existe, sem `OrderNotFoundException` nem qualquer outro tipo de exceção. Não encontrar um registro é um resultado normal de uma consulta, não uma falha excepcional — criar uma exceção só para isso adicionaria uma camada de tratamento (captura no `IExceptionHandler`, mapeamento para status HTTP) para expressar algo que um retorno nullable já expressa com mais clareza e menos custo. A tradução `null → 404 Not Found` é responsabilidade do endpoint HTTP, mantendo a Application indiferente a códigos de status, do mesmo jeito que já é indiferente a JWT.
+`GetOrderByIdQueryHandler` retorna `GetOrderByIdResult?` e devolve `null` quando o pedido não existe, sem `OrderNotFoundException` nem qualquer outro tipo de exceção. Não encontrar um registro é um resultado normal de uma consulta, não uma falha excepcional. A tradução `null → 404 Not Found` é responsabilidade do endpoint HTTP, mantendo a Application indiferente a códigos de status, do mesmo jeito que já é indiferente a JWT.
 
 ### Por que `OrderCannotBeCancelledException` vira 409 e não 400?
 
-`400 Bad Request` indicaria problema no formato ou nos dados da requisição em si. Não é o caso aqui: o request é válido, o pedido existe, mas o estado atual dele (`Cancelled`/`Confirmed`) é incompatível com a operação pedida — request válido + recurso existente + estado incompatível é exatamente a definição de conflito, não de entrada malformada. `409 Conflict` comunica isso de forma mais expressiva ao cliente da API do que um `400` genérico, que ficaria ambíguo entre "você mandou algo errado" e "o recurso não está no estado certo".
+`400 Bad Request` indicaria problema no formato ou nos dados da requisição em si. Não é o caso aqui: o request é válido, o pedido existe, mas o estado atual dele (`Cancelled`/`Confirmed`) é incompatível com a operação pedida — request válido + recurso existente + estado incompatível é exatamente a definição de conflito. `409 Conflict` comunica isso de forma mais expressiva do que um `400` genérico.
 
 ### Por que validar Issuer, Audience e assinatura no JWT?
 
-O `TokenValidationParameters` habilita explicitamente `ValidateIssuer`, `ValidateAudience`, `ValidateIssuerSigningKey` e `ValidateLifetime`. Confiar apenas na assinatura não seria suficiente: sem validar issuer/audience, um token assinado pela própria aplicação mas emitido com outro propósito ainda seria aceito. Os valores de comparação (`Issuer`, `Audience`, `Key`) vêm de `JwtOptions`, vinculado à seção `Jwt` da configuração, evitando strings mágicas espalhadas pelo código.
+O `TokenValidationParameters` habilita explicitamente `ValidateIssuer`, `ValidateAudience`, `ValidateIssuerSigningKey` e `ValidateLifetime`. Confiar apenas na assinatura não seria suficiente: sem validar issuer/audience, um token assinado pela própria aplicação mas emitido com outro propósito ainda seria aceito.
 
 ### Por que ClockSkew = TimeSpan.Zero?
 
-Por padrão, o `JwtBearerHandler` aplica uma tolerância de 5 minutos na validação de expiração, aceitando tokens já expirados dentro dessa janela. Para um teste técnico, essa tolerância reduz a previsibilidade dos testes de expiração. Zerar o `ClockSkew` faz o token expirar exatamente em `ExpirationMinutes`, sem margem adicional — não é uma exigência de segurança, mas é uma decisão simples e fácil de justificar.
+Por padrão, o `JwtBearerHandler` aplica uma tolerância de 5 minutos na validação de expiração, aceitando tokens já expirados dentro dessa janela. Para um teste técnico, essa tolerância reduz a previsibilidade dos testes de expiração. Zerar o `ClockSkew` faz o token expirar exatamente em `ExpirationMinutes`, sem margem adicional.
 
 ### Por que a ordem UseAuthentication → UseAuthorization?
 
-`UseAuthentication` identifica quem é o chamador, populando `HttpContext.User` a partir do token JWT; `UseAuthorization` decide se esse chamador pode acessar o recurso. A segunda depende do resultado da primeira, então a ordem inversa faria toda decisão de autorização cair sempre no caminho de "não autenticado". `UseExceptionHandler` é registrado antes de ambos para que falhas ao longo de todo o pipeline, inclusive de autenticação/autorização, sejam traduzidas para Problem Details.
+`UseAuthentication` identifica quem é o chamador, populando `HttpContext.User` a partir do token JWT; `UseAuthorization` decide se esse chamador pode acessar o recurso. A segunda depende do resultado da primeira, então a ordem inversa faria toda decisão de autorização cair sempre no caminho de "não autenticado".
 
 ### Por que Bearer no OpenAPI via Document/Operation Transformer em vez de trocar de biblioteca?
 
-O contrato OpenAPI continua gerado pelo suporte nativo do ASP.NET Core (`AddOpenApi`), sem introduzir Swashbuckle.AspNetCore.SwaggerGen só para ganhar suporte a esquemas de segurança — o Swashbuckle usado permanece exclusivamente a interface (`SwaggerUI`), que renderiza qualquer documento OpenAPI válido, incluindo o gerado nativamente. `BearerSecuritySchemeTransformer` (`IOpenApiDocumentTransformer`) registra o esquema `Bearer` em `components.securitySchemes`; `BearerSecurityRequirementOperationTransformer` (`IOpenApiOperationTransformer`) adiciona o requisito de segurança apenas às operações cujo endpoint tem `IAuthorizeData` nos metadados — ou seja, só `/api/orders`, não `/auth/login`. Isso evita marcar todos os endpoints com o cadeado do Swagger indiscriminadamente e mantém a documentação sincronizada automaticamente com `.RequireAuthorization()`: se um novo endpoint protegido for adicionado ao grupo, o cadeado aparece sem precisar tocar nesses transformers.
+O contrato OpenAPI continua gerado pelo suporte nativo do ASP.NET Core (`AddOpenApi`), sem introduzir Swashbuckle.AspNetCore.SwaggerGen só para ganhar suporte a esquemas de segurança. `BearerSecuritySchemeTransformer` registra o esquema `Bearer`; `BearerSecurityRequirementOperationTransformer` adiciona o requisito de segurança só às operações cujo endpoint tem `IAuthorizeData` nos metadados — ou seja, só `/api/orders`, não `/auth/login`. Isso mantém a documentação sincronizada automaticamente com `.RequireAuthorization()`.
 
 ### Por que validar `JwtOptions` no startup?
 
-`Jwt:Key`, `Jwt:Issuer` e `Jwt:Audience` binding para `string` sempre resultam em um valor não nulo (`string.Empty` quando ausentes), então `jwtSection.Get<JwtOptions>() ?? throw ...` sozinho não pega o caso de configuração ausente ou em branco — a aplicação subiria normalmente com uma chave de assinatura vazia. `JwtOptions` usa `DataAnnotations` (`[Required(AllowEmptyStrings = false)]` nos três campos, `[Range(1, int.MaxValue)]` em `ExpirationMinutes`) e `Program.cs` valida o objeto com `Validator.TryValidateObject` logo após o bind, antes de qualquer registro de serviço que dependa desses valores. Preferi validação manual simples a `AddOptions<T>().ValidateOnStart()` porque o mesmo `jwtOptions` já é extraído manualmente da configuração para montar o `TokenValidationParameters` antes de `builder.Build()` — validar esse objeto diretamente cobre também o `IOptions<JwtOptions>` injetado no `JwtTokenService`, já que os dois vêm da mesma leitura da seção `Jwt`, sem precisar de um segundo mecanismo de validação nem do pacote `Microsoft.Extensions.Options.DataAnnotations`.
+`Jwt:Key`, `Jwt:Issuer` e `Jwt:Audience` binding para `string` sempre resultam em um valor não nulo (`string.Empty` quando ausentes), então checar só se a seção existe não pega o caso de configuração em branco — a aplicação subiria com uma chave de assinatura vazia. `JwtOptions` usa `DataAnnotations` (`[Required(AllowEmptyStrings = false)]`, `[Range(1, int.MaxValue)]` em `ExpirationMinutes`) e `Program.cs` valida o objeto com `Validator.TryValidateObject` antes de qualquer registro de serviço que dependa desses valores.
 
 ### Por que login não passa pelo MediatR/Application?
 
-`LoginEndpoint` valida a credencial fixa e emite o token chamando `ITokenService` diretamente, sem `LoginCommand`. Autenticação é uma preocupação do boundary HTTP, não uma regra de negócio do domínio de pedidos: não há entidade, invariante ou persistência envolvida, só validar credencial e gerar um JWT. Criar um Command só para isso adicionaria uma camada de indireção sem trazer nenhum dos benefícios de CQRS. Como consequência, a camada Application nunca importa nada relacionado a JWT — nem para validar tokens (isso é 100% ASP.NET Core/`JwtBearerHandler`), nem para emiti-los.
+`LoginEndpoint` valida a credencial fixa e emite o token chamando `ITokenService` diretamente, sem `LoginCommand`. Autenticação é uma preocupação do boundary HTTP, não uma regra de negócio do domínio de pedidos: não há entidade, invariante ou persistência envolvida. Como consequência, a camada Application nunca importa nada relacionado a JWT.
 
-## Mudanças Realizadas (Etapa A — Esqueleto Funcional)
+## Status do Projeto e Trade-offs Conscientes
 
-### ✅ Atualização para .NET 10
+Todos os itens da **Stack Obrigatória** do desafio estão implementados: domínio, CQRS/MediatR, EF Core + SQLite com migrations automáticas, JWT, FluentValidation via pipeline, testes unitários dos 4 Handlers, Docker + Docker Compose, e este README.
 
-- `Directory.Build.props` configurado com `TargetFramework` net10.0
-- Todos os projetos (.csproj) atualizados
+Os itens listados como **"Desejável — Não Eliminatório"** no enunciado receberam este tratamento:
 
-### ✅ Central Package Management (CPM)
+| Item | Status |
+|---|---|
+| Testes de integração com `WebApplicationFactory` | ✅ Implementado — 8 testes, cobrindo `POST`/`GET`/`PATCH` |
+| Logging com Serilog + `LoggingBehavior` | ❌ Não implementado. Pacotes já referenciados no `.csproj`, mas nunca ligados — decisão consciente de priorizar o restante do escopo obrigatório |
+| SonarQube / `dotnet-sonarscanner` | ❌ Não implementado |
+| OpenTelemetry | ❌ Não implementado |
 
-- Criado `Directory.Packages.props` com versionamento centralizado
-- Dependências obrigatórias:
-  - **MediatR** 12.4.1
-  - **FluentValidation** 11.10.0
-  - **Entity Framework Core** 9.0.0
-  - **Microsoft.EntityFrameworkCore.Sqlite** 9.0.0
-  - **Microsoft.EntityFrameworkCore.Design** 9.0.0
+Essas três ausências são rastreadas com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/pendencias.md`](docs/pendencias.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
 
-### ✅ Configuração de Program.cs
+## Notas de Segurança
 
-- Composition root limitado às camadas, erros globais, migrations e endpoints
-- Sem Controllers ou configuração antecipada de CORS
-- OpenAPI registrado com o suporte nativo do ASP.NET Core e disponibilizado pelo Swagger UI
-- MediatR e FluentValidation registrados pela extensão da Application
-
-### ✅ Limpeza de estrutura
-
-- Removidos `.gitkeep` de todas as camadas
-- Estrutura de pastas mantida vazia mas pronta para implementação
-
-### ✅ Compilação validada
-
-```
-dotnet build → SUCESSO
-Warnings: 8 (vulnerabilidade transitiva SQLite, XML comments menores)
-Erros: 0
-```
-
-## Próximos Passos (Etapa B — Implementação de Negócio)
-
-1. **Implementar Domínio**
-   - Entidades: `Order`, `OrderItem`
-   - Enums: `OrderStatus`
-   - Invariantes e comportamento
-
-2. **Implementar Application**
-   - Commands: `CreateOrderCommand`, `CancelOrderCommand`
-   - Queries: `GetOrderByIdQuery`, `GetOrdersQuery`
-   - Handlers e Validators
-   - DTOs
-
-3. **Implementar Infrastructure**
-   - `OrderRepository` com EF Core
-   - `JwtTokenService`
-   - DbContext e migrations
-
-4. **Implementar Endpoints (Minimal API)**
-   - `POST /auth/login`
-   - `POST /api/orders`
-   - `GET /api/orders?page=1&pageSize=10`
-   - `GET /api/orders/{id}`
-   - `PATCH /api/orders/{id}/cancel`
-
-5. **Testes**
-   - Testes unitários de Handlers
-   - Testes de Domínio
-   - Testes de integração com `WebApplicationFactory`
-
-6. **Infraestrutura Final**
-   - Migrations automáticas no startup
-   - Docker + docker-compose
-   - SonarQube
-   - Serilog + OpenTelemetry
-
-## Validação de Arquitetura
-
-✅ Estrutura de Clean Architecture respeitada  
-✅ Nenhuma dependência invertida  
-✅ .NET 10 configurado  
-✅ MediatR e FluentValidation prontos  
-✅ Minimal API estruturada  
-✅ CPM funcional  
-✅ Build sem erros críticos  
-
-## Notas
-
-- A chave JWT presente em `appsettings.json` é apenas um placeholder de desenvolvimento e não representa um segredo real
-- Em produção, `Jwt:Key` deve ser fornecida por variável de ambiente (por exemplo, `Jwt__Key`) ou por um secret manager, sem versionar a chave ou tokens gerados
-- SQLite será embedded; sem container de banco separado
-- Migrations serão aplicadas automaticamente no startup (Etapa B)
-- Serilog e OpenTelemetry serão adicionados na Etapa B conforme necessário
+- A chave JWT em `appsettings.json` é só um placeholder de desenvolvimento, não um segredo real.
+- Em produção, `Jwt:Key` deve vir de variável de ambiente (`Jwt__Key`) ou de um secret manager — nunca versionada. O `docker-compose.yml` já demonstra esse padrão com um valor de desenvolvimento explicitamente marcado como tal.
+- O container Docker roda como usuário não-root e não expõe o arquivo SQLite como estático — só o EF Core acessa o banco.
+- SQLite é embarcado (sem container de banco separado); persiste via volume Docker nomeado, não bind mount do código-fonte.
