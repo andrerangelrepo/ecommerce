@@ -18,6 +18,8 @@ public static class OrderEndpoints
             .RequireAuthorization();
 
         group.MapPost(string.Empty, CreateOrderEndpoint.HandleAsync);
+        group.MapGet(string.Empty, GetOrdersEndpoint.HandleAsync);
+        group.MapGet("/{id:guid}", GetOrderByIdEndpoint.HandleAsync);
 
         return endpoints;
     }

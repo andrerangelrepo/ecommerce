@@ -104,6 +104,14 @@ Validação centralizada e reutilizável. Todos os Commands/Queries passam pelo 
 
 Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte de verdade em `Directory.Packages.props`.
 
+### Por que não criar `PagedResult<T>`?
+
+`GetOrdersResult` é um record concreto (`Items`, `Page`, `PageSize`, `TotalCount`, `TotalPages`), não uma abstração genérica de paginação. Hoje existe apenas um caso de listagem paginada no projeto; generalizar para `PagedResult<T>` antes de existir um segundo ou terceiro consumidor seria design especulativo — a abstração certa só fica clara depois de ver casos reais o suficiente para saber o que de fato varia entre eles. Se outra listagem paginada surgir, essa decisão é reavaliada então, com exemplos concretos guiando a forma da abstração em vez de suposição antecipada.
+
+### Por que Queries retornam `null` em vez de lançar exceção para registro inexistente?
+
+`GetOrderByIdQueryHandler` retorna `GetOrderByIdResult?` e devolve `null` quando o pedido não existe, sem `OrderNotFoundException` nem qualquer outro tipo de exceção. Não encontrar um registro é um resultado normal de uma consulta, não uma falha excepcional — criar uma exceção só para isso adicionaria uma camada de tratamento (captura no `IExceptionHandler`, mapeamento para status HTTP) para expressar algo que um retorno nullable já expressa com mais clareza e menos custo. A tradução `null → 404 Not Found` é responsabilidade do endpoint HTTP, mantendo a Application indiferente a códigos de status, do mesmo jeito que já é indiferente a JWT.
+
 ### Por que validar Issuer, Audience e assinatura no JWT?
 
 O `TokenValidationParameters` habilita explicitamente `ValidateIssuer`, `ValidateAudience`, `ValidateIssuerSigningKey` e `ValidateLifetime`. Confiar apenas na assinatura não seria suficiente: sem validar issuer/audience, um token assinado pela própria aplicação mas emitido com outro propósito ainda seria aceito. Os valores de comparação (`Issuer`, `Audience`, `Key`) vêm de `JwtOptions`, vinculado à seção `Jwt` da configuração, evitando strings mágicas espalhadas pelo código.
