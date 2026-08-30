@@ -11,8 +11,6 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
-    <PackageReference Include="MediatR" />
-    <PackageReference Include="FluentValidation" />
   </ItemGroup>
 
   <ItemGroup>

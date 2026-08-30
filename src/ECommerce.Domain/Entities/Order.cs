@@ -9,6 +9,10 @@ public class Order
 {
     private readonly List<OrderItem> _items = [];
 
+    private Order()
+    {
+    }
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Order"/> class.
     /// </summary>
