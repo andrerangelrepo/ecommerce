@@ -1,4 +1,5 @@
 using ECommerce.Domain.Enums;
+using ECommerce.Domain.Exceptions;
 
 namespace ECommerce.Domain.Entities;
 
@@ -84,14 +85,14 @@ public class Order
     }
 
     /// <summary>Cancels the order.</summary>
-    /// <exception cref="InvalidOperationException">
+    /// <exception cref="OrderCannotBeCancelledException">
     /// Thrown when the order is not pending.
     /// </exception>
     public void Cancel()
     {
         if (Status != OrderStatus.Pending)
         {
-            throw new InvalidOperationException("Only pending orders can be cancelled.");
+            throw new OrderCannotBeCancelledException(Status);
         }
 
         Status = OrderStatus.Cancelled;

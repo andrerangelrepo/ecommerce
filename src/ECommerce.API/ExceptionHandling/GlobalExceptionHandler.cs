@@ -1,3 +1,4 @@
+using ECommerce.Domain.Exceptions;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -20,12 +21,13 @@ public sealed class GlobalExceptionHandler(
     {
         var problemDetails = CreateProblemDetails(httpContext, exception);
 
-        if (exception is ValidationException)
+        if (exception is ValidationException or OrderCannotBeCancelledException)
         {
             logger.LogWarning(
-                "Request validation failed for {Method} {Path}.",
+                "Request rejected for {Method} {Path}: {Message}",
                 httpContext.Request.Method,
-                httpContext.Request.Path);
+                httpContext.Request.Path,
+                exception.Message);
         }
         else
         {
@@ -67,6 +69,14 @@ public sealed class GlobalExceptionHandler(
                     Status = StatusCodes.Status400BadRequest,
                     Title = "Validation error",
                     Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
+                },
+            OrderCannotBeCancelledException orderCannotBeCancelledException =>
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status409Conflict,
+                    Title = "Order cannot be cancelled",
+                    Detail = orderCannotBeCancelledException.Message,
+                    Type = "https://tools.ietf.org/html/rfc9110#section-15.5.10"
                 },
             _ => new ProblemDetails
             {

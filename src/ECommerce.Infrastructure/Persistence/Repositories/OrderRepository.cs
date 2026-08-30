@@ -51,4 +51,21 @@ public sealed class OrderRepository(ApplicationDbContext context)
 
         return new OrderPage(orders, totalCount);
     }
+
+    /// <inheritdoc />
+    public async Task<Order?> GetByIdForUpdateAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        return await context.Orders
+            .SingleOrDefaultAsync(order => order.Id == id, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateAsync(
+        Order order,
+        CancellationToken cancellationToken = default)
+    {
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }

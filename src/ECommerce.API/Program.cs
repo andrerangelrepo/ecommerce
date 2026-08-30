@@ -81,3 +81,8 @@ app.MapAuthEndpoints();
 app.MapOrderEndpoints();
 
 app.Run();
+
+/// <summary>
+/// Exposes the entry point for <c>WebApplicationFactory&lt;Program&gt;</c> in integration tests.
+/// </summary>
+public partial class Program;
