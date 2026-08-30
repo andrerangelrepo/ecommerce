@@ -55,4 +55,4 @@ Marcar `[x]` conforme cada item for implementado.
 
 ## Outros achados (fora do escopo direto das INSTRUÇÕES, mas relevantes)
 
-- [ ] `GET /api/orders?page=abc` (valor não numérico) retorna `500` em vez de `400`. Causa: `BadHttpRequestException` do binding do Minimal API não é tratada pelo `GlobalExceptionHandler`. Detalhado em [`docs/test-scenarios.md`](test-scenarios.md), seção 8 (gap LIST-06/LIST-07).
+- [x] `GET /api/orders?page=abc` (valor não numérico) retornava `500` em vez de `400`. Corrigido: `GlobalExceptionHandler` agora trata `BadHttpRequestException` (lançada pelo binding do Minimal API) e mapeia para `400`, com `title: "Invalid request"` e `detail` explicando o parâmetro que falhou. Teste de regressão em [`GetOrdersIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/GetOrdersIntegrationTests.cs) — necessário como integração porque o erro ocorre no binding, antes do MediatR/`ValidationBehavior` rodarem, então nenhum teste de Handler/Validator conseguiria pegar essa regressão.

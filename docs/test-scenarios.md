@@ -593,46 +593,43 @@ curl -i http://localhost:5000/api/orders
 WWW-Authenticate: Bearer
 ```
 
-### 500 Internal Server Error — gap conhecido, não deveria acontecer
+### 400 Bad Request — binding malformado (corrigido)
 
-- [ ] **GAP:** `page` não numérico deveria retornar `400`, mas retorna `500`
+- [x] `page` não numérico
 
 ```bash
 curl -i "http://localhost:5000/api/orders?page=abc&pageSize=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Resposta atual (incorreta):
-
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.6.1",
-  "title": "An unexpected error occurred.",
-  "status": 500,
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Invalid request",
+  "status": 400,
+  "detail": "Failed to bind parameter \"int page\" from \"abc\".",
   "traceId": "00-...-00"
 }
 ```
 
-Resposta esperada pelo contrato ("paginação inválida → 400"):
+Causa original: `BadHttpRequestException` do binding do Minimal API não era tratada pelo `GlobalExceptionHandler` (caía no branch genérico `500`). Corrigido com um case dedicado no `switch`. Teste de regressão: [`GetOrdersIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/GetOrdersIntegrationTests.cs).
 
-```json
-{
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "Bad Request",
-  "status": 400
-}
-```
-
-Causa: `BadHttpRequestException` do binding do Minimal API não é tratada pelo `GlobalExceptionHandler`. Ver [`docs/pendencias.md`](pendencias.md).
-
-- [ ] **GAP:** `pageSize` não numérico — mesmo problema
+- [x] `pageSize` não numérico
 
 ```bash
 curl -i "http://localhost:5000/api/orders?page=1&pageSize=abc" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Mesma resposta atual/esperada do item acima.
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Invalid request",
+  "status": 400,
+  "detail": "Failed to bind parameter \"int pageSize\" from \"abc\".",
+  "traceId": "00-...-00"
+}
+```
 
 ---
 

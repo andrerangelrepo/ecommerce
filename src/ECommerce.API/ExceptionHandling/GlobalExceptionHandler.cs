@@ -21,7 +21,7 @@ public sealed class GlobalExceptionHandler(
     {
         var problemDetails = CreateProblemDetails(httpContext, exception);
 
-        if (exception is ValidationException or OrderCannotBeCancelledException)
+        if (exception is ValidationException or OrderCannotBeCancelledException or BadHttpRequestException)
         {
             logger.LogWarning(
                 "Request rejected for {Method} {Path}: {Message}",
@@ -77,6 +77,14 @@ public sealed class GlobalExceptionHandler(
                     Title = "Order cannot be cancelled",
                     Detail = orderCannotBeCancelledException.Message,
                     Type = "https://tools.ietf.org/html/rfc9110#section-15.5.10"
+                },
+            BadHttpRequestException badHttpRequestException =>
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "Invalid request",
+                    Detail = badHttpRequestException.Message,
+                    Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
                 },
             _ => new ProblemDetails
             {
