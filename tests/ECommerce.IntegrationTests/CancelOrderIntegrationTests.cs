@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ECommerce.API.Contracts.Auth;
 using ECommerce.API.Contracts.Orders;
+using ECommerce.IntegrationTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -13,13 +14,13 @@ namespace ECommerce.IntegrationTests;
 /// Verifies that cancelling an order through the HTTP API persists the change,
 /// not just the in-memory result of a single request.
 /// </summary>
-public sealed class CancelOrderIntegrationTests : IClassFixture<OrderApiFactory>
+public sealed class CancelOrderIntegrationTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly HttpClient _client;
 
     /// <summary>Initializes a new instance of the <see cref="CancelOrderIntegrationTests"/> class.</summary>
     /// <param name="factory">The API factory providing the in-process test server.</param>
-    public CancelOrderIntegrationTests(OrderApiFactory factory)
+    public CancelOrderIntegrationTests(CustomWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
     }

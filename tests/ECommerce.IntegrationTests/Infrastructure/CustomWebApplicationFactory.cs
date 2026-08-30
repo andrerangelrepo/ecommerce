@@ -2,12 +2,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 
-namespace ECommerce.IntegrationTests;
+namespace ECommerce.IntegrationTests.Infrastructure;
 
 /// <summary>
-/// Hosts the API in-process against an isolated SQLite database for integration tests.
+/// Hosts the real API in-process, overriding only the configuration needed for tests
+/// (an isolated SQLite database) — never recreates the application pipeline manually.
 /// </summary>
-public sealed class OrderApiFactory : WebApplicationFactory<Program>
+public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _databasePath = Path.Combine(
         Path.GetTempPath(),
