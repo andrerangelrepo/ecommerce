@@ -34,7 +34,7 @@ Application + Infrastructure ← Api
 - **CQRS + MediatR** — separação clara entre Commands e Queries
 - **FluentValidation** — validação de entrada via Pipeline Behavior
 - **Entity Framework Core 9.0** — persistência (SQLite)
-- **JWT** — autenticação stateless
+- **OpenAPI nativo + Swagger UI** — contrato gerado pelo ASP.NET Core com interface interativa em Development
 - **xUnit** — testes unitários
 - **Central Package Management (CPM)** — versionamento centralizado
 
@@ -62,7 +62,35 @@ dotnet test
 
 ### Por que Minimal API?
 
-Minimal API reduz código cerimonial em comparação com Controllers tradicionais. Cada endpoint é um adapter HTTP → MediatR, mantendo a lógica de negócio isolada na camada Application.
+Minimal APIs foram escolhidas devido ao pequeno número de endpoints — cinco no escopo atual — e à simplicidade do serviço. Controllers seriam igualmente válidos, mas adicionariam estrutura sem benefício relevante neste cenário. As responsabilidades de negócio permanecem isoladas na camada Application por meio de CQRS/MediatR; os endpoints atuam somente como adaptadores entre HTTP e os casos de uso.
+
+### Por que separar endpoints e contratos do `Program.cs`?
+
+O `Program.cs` permanece como composition root da aplicação. Endpoints são organizados por recurso e seus contratos HTTP ficam separados dos Commands e DTOs da Application. Rotas de pedidos compartilham o prefixo `/api/orders` por meio de `MapGroup`, centralizando apenas configuração comum ao recurso. Essa organização evita o crescimento do arquivo de inicialização sem introduzir um framework próprio ou uma abstração genérica de endpoints e mantém explícita a fronteira entre API e Application.
+
+### Por que manter o `Program.cs` mínimo?
+
+O startup declara apenas a composição necessária para o escopo já implementado: Application, Infrastructure, tratamento global de erros, migrations, documentação da API e endpoints. Configurações de JWT e CORS não são antecipadas; serão adicionadas somente se seus respectivos requisitos exigirem. Isso mantém o composition root legível e evita dependências e configurações sem uso concreto.
+
+### Por que utilizar o OpenAPI nativo?
+
+O contrato continua sendo gerado pelo suporte oficial do ASP.NET Core por meio de `AddOpenApi` e `MapOpenApi`. Em Development, o documento fica disponível em `/openapi/v1.json` e o Swagger UI em `/swagger`. Apenas o pacote de interface do Swashbuckle é utilizado, apontando para o documento nativo; assim evitamos manter dois geradores OpenAPI concorrentes. Fora de Development, documento e interface não são publicados.
+
+### Por que separar Request HTTP e Command?
+
+Os requests da API representam contratos externos sujeitos à evolução do protocolo HTTP, enquanto os Commands representam intenções e casos de uso da Application. Mesmo quando possuem os mesmos campos, tipos distintos evitam expor MediatR como contrato público e permitem que API e Application evoluam sem acoplamento desnecessário.
+
+### Por que utilizar um Response HTTP dedicado?
+
+A API não expõe entidades do Domain nem retorna diretamente resultados internos da Application. Um response próprio mantém o contrato HTTP estável e permite representar `OrderStatus` como texto legível sem alterar a persistência, que continua usando o mapeamento inteiro padrão do EF Core.
+
+### Por que utilizar Problem Details?
+
+Erros HTTP utilizam o suporte nativo do ASP.NET Core a Problem Details, seguindo o formato padronizado `application/problem+json`. Isso oferece respostas interoperáveis sem criar envelopes genéricos como `ApiResponse<T>` ou `ErrorResponse<T>`. O tratamento global das exceções será responsável por traduzir cada categoria de falha para o status HTTP apropriado.
+
+### Por que centralizar o tratamento de exceções?
+
+A API utiliza o mecanismo nativo `IExceptionHandler` do ASP.NET Core. Exceções atravessam um único ponto de tradução para Problem Details, são registradas com o contexto da requisição e recebem um `traceId` para correlação. Falhas do FluentValidation produzem HTTP 400 com mensagens agrupadas pelo caminho da propriedade; falhas inesperadas não expõem detalhes internos e produzem HTTP 500. Os endpoints permanecem focados na adaptação HTTP, sem blocos `try/catch` repetidos.
 
 ### Por que CQRS?
 
@@ -95,11 +123,10 @@ Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte 
 
 ### ✅ Configuração de Program.cs
 
-- Removido `AddControllers()` e `MapControllers()`
-- Adicionado `AddMediatR()` com auto-registro de handlers
-- Implementado `ValidationBehavior<TRequest, TResponse>` para FluentValidation
-- Mantido Swagger/OpenAPI com documentação JWT
-- Mantido JWT e CORS conforme configuração
+- Composition root limitado às camadas, erros globais, migrations e endpoints
+- Sem Controllers ou configurações antecipadas de JWT e CORS
+- OpenAPI registrado com o suporte nativo do ASP.NET Core e disponibilizado pelo Swagger UI
+- MediatR e FluentValidation registrados pela extensão da Application
 
 ### ✅ Limpeza de estrutura
 
@@ -162,7 +189,7 @@ Erros: 0
 
 ## Notas
 
-- A signing key JWT não é hardcoded; usar `appsettings.json` ou variáveis de ambiente
+- Quando JWT for implementado, a signing key deverá vir de configuração segura, nunca hardcoded
 - SQLite será embedded; sem container de banco separado
 - Migrations serão aplicadas automaticamente no startup (Etapa B)
 - Serilog e OpenTelemetry serão adicionados na Etapa B conforme necessário
