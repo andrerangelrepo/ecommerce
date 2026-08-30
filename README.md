@@ -70,7 +70,7 @@ O `Program.cs` permanece como composition root da aplicação. Endpoints são or
 
 ### Por que manter o `Program.cs` mínimo?
 
-O startup declara apenas a composição necessária para o escopo já implementado: Application, Infrastructure, tratamento global de erros, migrations, documentação da API e endpoints. Configurações de JWT e CORS não são antecipadas; serão adicionadas somente se seus respectivos requisitos exigirem. Isso mantém o composition root legível e evita dependências e configurações sem uso concreto.
+O startup declara apenas a composição necessária para o escopo já implementado: Application, Infrastructure, tratamento global de erros, migrations, documentação da API e endpoints. O suporte e a configuração de JWT são adicionados conforme os requisitos de autenticação; CORS permanece sem configuração antecipada. Isso mantém o composition root legível e evita dependências e configurações sem uso concreto.
 
 ### Por que utilizar o OpenAPI nativo?
 
@@ -104,6 +104,30 @@ Validação centralizada e reutilizável. Todos os Commands/Queries passam pelo 
 
 Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte de verdade em `Directory.Packages.props`.
 
+### Por que validar Issuer, Audience e assinatura no JWT?
+
+O `TokenValidationParameters` habilita explicitamente `ValidateIssuer`, `ValidateAudience`, `ValidateIssuerSigningKey` e `ValidateLifetime`. Confiar apenas na assinatura não seria suficiente: sem validar issuer/audience, um token assinado pela própria aplicação mas emitido com outro propósito ainda seria aceito. Os valores de comparação (`Issuer`, `Audience`, `Key`) vêm de `JwtOptions`, vinculado à seção `Jwt` da configuração, evitando strings mágicas espalhadas pelo código.
+
+### Por que ClockSkew = TimeSpan.Zero?
+
+Por padrão, o `JwtBearerHandler` aplica uma tolerância de 5 minutos na validação de expiração, aceitando tokens já expirados dentro dessa janela. Para um teste técnico, essa tolerância reduz a previsibilidade dos testes de expiração. Zerar o `ClockSkew` faz o token expirar exatamente em `ExpirationMinutes`, sem margem adicional — não é uma exigência de segurança, mas é uma decisão simples e fácil de justificar.
+
+### Por que a ordem UseAuthentication → UseAuthorization?
+
+`UseAuthentication` identifica quem é o chamador, populando `HttpContext.User` a partir do token JWT; `UseAuthorization` decide se esse chamador pode acessar o recurso. A segunda depende do resultado da primeira, então a ordem inversa faria toda decisão de autorização cair sempre no caminho de "não autenticado". `UseExceptionHandler` é registrado antes de ambos para que falhas ao longo de todo o pipeline, inclusive de autenticação/autorização, sejam traduzidas para Problem Details.
+
+### Por que Bearer no OpenAPI via Document/Operation Transformer em vez de trocar de biblioteca?
+
+O contrato OpenAPI continua gerado pelo suporte nativo do ASP.NET Core (`AddOpenApi`), sem introduzir Swashbuckle.AspNetCore.SwaggerGen só para ganhar suporte a esquemas de segurança — o Swashbuckle usado permanece exclusivamente a interface (`SwaggerUI`), que renderiza qualquer documento OpenAPI válido, incluindo o gerado nativamente. `BearerSecuritySchemeTransformer` (`IOpenApiDocumentTransformer`) registra o esquema `Bearer` em `components.securitySchemes`; `BearerSecurityRequirementOperationTransformer` (`IOpenApiOperationTransformer`) adiciona o requisito de segurança apenas às operações cujo endpoint tem `IAuthorizeData` nos metadados — ou seja, só `/api/orders`, não `/auth/login`. Isso evita marcar todos os endpoints com o cadeado do Swagger indiscriminadamente e mantém a documentação sincronizada automaticamente com `.RequireAuthorization()`: se um novo endpoint protegido for adicionado ao grupo, o cadeado aparece sem precisar tocar nesses transformers.
+
+### Por que validar `JwtOptions` no startup?
+
+`Jwt:Key`, `Jwt:Issuer` e `Jwt:Audience` binding para `string` sempre resultam em um valor não nulo (`string.Empty` quando ausentes), então `jwtSection.Get<JwtOptions>() ?? throw ...` sozinho não pega o caso de configuração ausente ou em branco — a aplicação subiria normalmente com uma chave de assinatura vazia. `JwtOptions` usa `DataAnnotations` (`[Required(AllowEmptyStrings = false)]` nos três campos, `[Range(1, int.MaxValue)]` em `ExpirationMinutes`) e `Program.cs` valida o objeto com `Validator.TryValidateObject` logo após o bind, antes de qualquer registro de serviço que dependa desses valores. Preferi validação manual simples a `AddOptions<T>().ValidateOnStart()` porque o mesmo `jwtOptions` já é extraído manualmente da configuração para montar o `TokenValidationParameters` antes de `builder.Build()` — validar esse objeto diretamente cobre também o `IOptions<JwtOptions>` injetado no `JwtTokenService`, já que os dois vêm da mesma leitura da seção `Jwt`, sem precisar de um segundo mecanismo de validação nem do pacote `Microsoft.Extensions.Options.DataAnnotations`.
+
+### Por que login não passa pelo MediatR/Application?
+
+`LoginEndpoint` valida a credencial fixa e emite o token chamando `ITokenService` diretamente, sem `LoginCommand`. Autenticação é uma preocupação do boundary HTTP, não uma regra de negócio do domínio de pedidos: não há entidade, invariante ou persistência envolvida, só validar credencial e gerar um JWT. Criar um Command só para isso adicionaria uma camada de indireção sem trazer nenhum dos benefícios de CQRS. Como consequência, a camada Application nunca importa nada relacionado a JWT — nem para validar tokens (isso é 100% ASP.NET Core/`JwtBearerHandler`), nem para emiti-los.
+
 ## Mudanças Realizadas (Etapa A — Esqueleto Funcional)
 
 ### ✅ Atualização para .NET 10
@@ -124,7 +148,7 @@ Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte 
 ### ✅ Configuração de Program.cs
 
 - Composition root limitado às camadas, erros globais, migrations e endpoints
-- Sem Controllers ou configurações antecipadas de JWT e CORS
+- Sem Controllers ou configuração antecipada de CORS
 - OpenAPI registrado com o suporte nativo do ASP.NET Core e disponibilizado pelo Swagger UI
 - MediatR e FluentValidation registrados pela extensão da Application
 
@@ -149,7 +173,7 @@ Erros: 0
    - Invariantes e comportamento
 
 2. **Implementar Application**
-   - Commands: `CreateOrderCommand`, `CancelOrderCommand`, `LoginCommand`
+   - Commands: `CreateOrderCommand`, `CancelOrderCommand`
    - Queries: `GetOrderByIdQuery`, `GetOrdersQuery`
    - Handlers e Validators
    - DTOs
@@ -189,7 +213,8 @@ Erros: 0
 
 ## Notas
 
-- Quando JWT for implementado, a signing key deverá vir de configuração segura, nunca hardcoded
+- A chave JWT presente em `appsettings.json` é apenas um placeholder de desenvolvimento e não representa um segredo real
+- Em produção, `Jwt:Key` deve ser fornecida por variável de ambiente (por exemplo, `Jwt__Key`) ou por um secret manager, sem versionar a chave ou tokens gerados
 - SQLite será embedded; sem container de banco separado
 - Migrations serão aplicadas automaticamente no startup (Etapa B)
 - Serilog e OpenTelemetry serão adicionados na Etapa B conforme necessário

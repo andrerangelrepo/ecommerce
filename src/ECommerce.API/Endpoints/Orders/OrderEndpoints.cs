@@ -13,7 +13,9 @@ public static class OrderEndpoints
     public static IEndpointRouteBuilder MapOrderEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/orders");
+        var group = endpoints
+            .MapGroup("/api/orders")
+            .RequireAuthorization();
 
         group.MapPost(string.Empty, CreateOrderEndpoint.HandleAsync);
 
