@@ -542,7 +542,7 @@ curl -i "http://localhost:5000/api/orders?page=1&pageSize=-5" \
 }
 ```
 
-- [ ] `page` negativo (mesma regra do `page=0`, não verificado explicitamente em runtime)
+- [x] `page` negativo (agora coberto por [`GetOrdersQueryValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryValidatorTests.cs), não verificado via HTTP nesta rodada)
 
 ```bash
 curl -i "http://localhost:5000/api/orders?page=-1&pageSize=10" \
@@ -561,7 +561,7 @@ curl -i "http://localhost:5000/api/orders?page=-1&pageSize=10" \
 }
 ```
 
-- [ ] `pageSize=0` (mesma regra do `pageSize` negativo, não verificado explicitamente em runtime)
+- [x] `pageSize=0` (agora coberto por [`GetOrdersQueryValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryValidatorTests.cs), não verificado via HTTP nesta rodada)
 
 ```bash
 curl -i "http://localhost:5000/api/orders?page=1&pageSize=0" \
@@ -798,11 +798,24 @@ Os cenários marcados `[x]` acima foram validados manualmente (runtime) ao longo
 
 | Cenário | Teste |
 |---|---|
-| `GET /api/orders/{id}` — encontrado, não encontrado, `CancellationToken` propagado | [`GetOrderByIdQueryHandlerTests.cs`](../tests/ECommerce.Tests/Features/Orders/Queries/GetOrderById/GetOrderByIdQueryHandlerTests.cs) |
-| `GET /api/orders` — página com registros, página vazia, `TotalCount=0` | [`GetOrdersQueryHandlerTests.cs`](../tests/ECommerce.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryHandlerTests.cs) |
-| `PATCH .../cancel` — `Pending`, inexistente, `Cancelled`, `Confirmed` | [`CancelOrderCommandHandlerTests.cs`](../tests/ECommerce.Tests/Features/Orders/Commands/CancelOrder/CancelOrderCommandHandlerTests.cs) |
-| `POST /api/orders` — validação de entrada (todas as regras) | [`CreateOrderCommandValidatorTests.cs`](../tests/ECommerce.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandValidatorTests.cs) |
-| Fluxo completo `POST → GET → PATCH cancel → GET`, e cancelamento repetido (`409`) | [`CancelOrderIntegrationTests.cs`](../tests/ECommerce.Tests/Integration/CancelOrderIntegrationTests.cs) |
-| Regra de domínio `Order.Cancel()` (`Pending`/`Cancelled`/`Confirmed`) | [`OrderTests.cs`](../tests/ECommerce.Tests/Domain/Entities/OrderTests.cs) |
+| `GET /api/orders/{id}` — encontrado, não encontrado, `CancellationToken` propagado | [`GetOrderByIdQueryHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrderById/GetOrderByIdQueryHandlerTests.cs) |
+| `GET /api/orders` — página com registros, página vazia, `TotalCount=0` | [`GetOrdersQueryHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryHandlerTests.cs) |
+| `PATCH .../cancel` — `Pending`, inexistente, `Cancelled`, `Confirmed` | [`CancelOrderCommandHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CancelOrder/CancelOrderCommandHandlerTests.cs) |
+| `POST /api/orders` — validação de entrada (todas as regras) | [`CreateOrderCommandValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandValidatorTests.cs) |
+| `POST /api/orders` — persistência via `AddAsync`, mapeamento `Order` → `CreateOrderResult`, `CancellationToken` propagado | [`CreateOrderCommandHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandHandlerTests.cs) |
+| `GET /api/orders` — validação de `page`/`pageSize` (`<= 0`) | [`GetOrdersQueryValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryValidatorTests.cs) |
+| Fluxo completo `POST → GET → PATCH cancel → GET`, e cancelamento repetido (`409`) | [`CancelOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CancelOrderIntegrationTests.cs) |
+| Invariantes do Domain: sem itens, `Quantity`/`UnitPrice` zero ou negativo, `TotalAmount`, status inicial `Pending`, `Order.Cancel()` (`Pending`/`Cancelled`/`Confirmed`) — CT-DOMAIN-01 a 10 | [`OrderTests.cs`](../tests/ECommerce.Application.Tests/Domain/Entities/OrderTests.cs) |
 
-`CreateOrderCommandHandler` ainda não tem teste de Handler dedicado — ver [`docs/pendencias.md`](pendencias.md).
+Todos os quatro Handlers (`CreateOrder`, `GetOrderById`, `GetOrders`, `CancelOrder`) e os validators relevantes (`CreateOrderCommand`, `GetOrdersQuery`) têm teste unitário dedicado — gap fechado na TASK 10.
+
+### Catálogo formal de casos de teste dos Handlers (TASK 10)
+
+| Handler | Casos |
+|---|---|
+| `CreateOrderCommandHandler` | CT-CREATE-01 (criação válida), CT-CREATE-02 (`TotalAmount` calculado pelo domínio), CT-CREATE-03 (entidade capturada e inspecionada), CT-CREATE-04 (`CancellationToken`) |
+| `GetOrderByIdQueryHandler` | CT-GET-ID-01 (encontrado), CT-GET-ID-02 (inexistente, sem exceção), CT-GET-ID-03 (`CancellationToken`) |
+| `GetOrdersQueryHandler` | CT-LIST-01 (página com resultados), CT-LIST-02 (nenhum pedido), CT-LIST-03 (última página parcial), CT-LIST-04 (página além do total), CT-LIST-05 (`CancellationToken`) |
+| `CancelOrderCommandHandler` | CT-CANCEL-01 (`Pending`→`Cancelled`), CT-CANCEL-02 (inexistente), CT-CANCEL-03 (`Cancelled`→exceção), CT-CANCEL-04 (`Confirmed`→exceção), CT-CANCEL-05 (`CancellationToken` em `GetByIdForUpdateAsync` e `UpdateAsync`) |
+
+Inventário de `IRequestHandler<,>` no código confirma exatamente esses 4 Handlers — nenhum outro existe (login não passa pelo MediatR, decisão documentada no README).

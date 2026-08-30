@@ -14,7 +14,8 @@ src/
   Api/                 — DI, autenticação, endpoints (Minimal API)
 
 tests/
-  ECommerce.Tests/     — Testes unitários e integração
+  ECommerce.Application.Tests/ — Testes unitários (Domain, Handlers, Validators) — rápidos e isolados
+  ECommerce.IntegrationTests/  — Testes de integração via WebApplicationFactory (JWT + MediatR + EF Core + SQLite)
 ```
 
 ### Dependências entre camadas

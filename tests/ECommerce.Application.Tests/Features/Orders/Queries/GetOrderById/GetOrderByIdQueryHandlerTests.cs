@@ -7,7 +7,7 @@ using FluentAssertions;
 using Moq;
 using Xunit;
 
-namespace ECommerce.Tests.Features.Orders.Queries.GetOrderById;
+namespace ECommerce.Application.Tests.Features.Orders.Queries.GetOrderById;
 
 /// <summary>
 /// Tests the handler that fetches an order by its identifier.
@@ -16,7 +16,7 @@ public sealed class GetOrderByIdQueryHandlerTests
 {
     private readonly Mock<IOrderRepository> _orderRepository = new();
 
-    /// <summary>CT-H01: verifies the mapped result when the order exists.</summary>
+    /// <summary>CT-GET-ID-01: verifies the mapped result when the order exists.</summary>
     [Fact]
     public async Task Handle_ShouldReturnMappedResult_WhenOrderExists()
     {
@@ -36,6 +36,7 @@ public sealed class GetOrderByIdQueryHandlerTests
         result!.Id.Should().Be(order.Id);
         result.CustomerId.Should().Be(order.CustomerId);
         result.Status.Should().Be(order.Status);
+        result.CreatedAt.Should().Be(order.CreatedAt);
         result.TotalAmount.Should().Be(order.TotalAmount);
         result.Items.Should().BeEquivalentTo(order.Items.Select(item =>
             new GetOrderItemResult(
@@ -46,7 +47,10 @@ public sealed class GetOrderByIdQueryHandlerTests
                 item.TotalPrice)));
     }
 
-    /// <summary>CT-H02: verifies <see langword="null"/> is returned when the order does not exist.</summary>
+    /// <summary>
+    /// CT-GET-ID-02: verifies <see langword="null"/> is returned when the order does not exist,
+    /// without throwing.
+    /// </summary>
     [Fact]
     public async Task Handle_ShouldReturnNull_WhenOrderDoesNotExist()
     {
@@ -56,14 +60,15 @@ public sealed class GetOrderByIdQueryHandlerTests
 
         var handler = new GetOrderByIdQueryHandler(_orderRepository.Object);
 
-        var result = await handler.Handle(
+        var act = () => handler.Handle(
             new GetOrderByIdQuery(Guid.NewGuid()),
             CancellationToken.None);
 
-        result.Should().BeNull();
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.Should().BeNull();
     }
 
-    /// <summary>CT-H03: verifies the received cancellation token is forwarded to the repository.</summary>
+    /// <summary>CT-GET-ID-03: verifies the received cancellation token is forwarded to the repository.</summary>
     [Fact]
     public async Task Handle_ShouldForwardCancellationToken_ToRepository()
     {

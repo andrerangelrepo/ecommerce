@@ -7,7 +7,7 @@ using FluentAssertions;
 using Moq;
 using Xunit;
 
-namespace ECommerce.Tests.Features.Orders.Commands.CancelOrder;
+namespace ECommerce.Application.Tests.Features.Orders.Commands.CancelOrder;
 
 /// <summary>
 /// Tests the handler that cancels an order.
@@ -16,7 +16,7 @@ public sealed class CancelOrderCommandHandlerTests
 {
     private readonly Mock<IOrderRepository> _orderRepository = new();
 
-    /// <summary>CT-H01: verifies a pending order is cancelled, persisted, and the token is forwarded.</summary>
+    /// <summary>CT-CANCEL-01: verifies a pending order is cancelled, persisted, and the token is forwarded.</summary>
     [Fact]
     public async Task Handle_ShouldCancelAndPersist_WhenOrderIsPending()
     {
@@ -45,7 +45,7 @@ public sealed class CancelOrderCommandHandlerTests
             Times.Once);
     }
 
-    /// <summary>CT-H02: verifies a missing order returns null without persisting anything.</summary>
+    /// <summary>CT-CANCEL-02: verifies a missing order returns null without persisting anything.</summary>
     [Fact]
     public async Task Handle_ShouldReturnNull_WhenOrderDoesNotExist()
     {
@@ -64,7 +64,7 @@ public sealed class CancelOrderCommandHandlerTests
             Times.Never);
     }
 
-    /// <summary>CT-H03: verifies an already cancelled order is rejected without persisting anything.</summary>
+    /// <summary>CT-CANCEL-03: verifies an already cancelled order is rejected without persisting anything.</summary>
     [Fact]
     public async Task Handle_ShouldThrowAndNotPersist_WhenOrderIsAlreadyCancelled()
     {
@@ -86,7 +86,7 @@ public sealed class CancelOrderCommandHandlerTests
             Times.Never);
     }
 
-    /// <summary>CT-H03: verifies a confirmed order is rejected without persisting anything.</summary>
+    /// <summary>CT-CANCEL-04: verifies a confirmed order is rejected without persisting anything.</summary>
     [Fact]
     public async Task Handle_ShouldThrowAndNotPersist_WhenOrderIsConfirmed()
     {
@@ -106,6 +106,33 @@ public sealed class CancelOrderCommandHandlerTests
         _orderRepository.Verify(
             repository => repository.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    /// <summary>
+    /// CT-CANCEL-05: verifies the received cancellation token is forwarded to both
+    /// <see cref="IOrderRepository.GetByIdForUpdateAsync"/> and <see cref="IOrderRepository.UpdateAsync"/>.
+    /// </summary>
+    [Fact]
+    public async Task Handle_ShouldForwardCancellationToken_ToBothRepositoryCalls()
+    {
+        var order = CreateOrder();
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = cancellationTokenSource.Token;
+
+        _orderRepository
+            .Setup(repository => repository.GetByIdForUpdateAsync(order.Id, cancellationToken))
+            .ReturnsAsync(order);
+
+        var handler = new CancelOrderCommandHandler(_orderRepository.Object);
+
+        await handler.Handle(new CancelOrderCommand(order.Id), cancellationToken);
+
+        _orderRepository.Verify(
+            repository => repository.GetByIdForUpdateAsync(order.Id, cancellationToken),
+            Times.Once);
+        _orderRepository.Verify(
+            repository => repository.UpdateAsync(order, cancellationToken),
+            Times.Once);
     }
 
     private static Order CreateOrder()

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 
-namespace ECommerce.Tests.Integration;
+namespace ECommerce.IntegrationTests;
 
 /// <summary>
 /// Hosts the API in-process against an isolated SQLite database for integration tests.

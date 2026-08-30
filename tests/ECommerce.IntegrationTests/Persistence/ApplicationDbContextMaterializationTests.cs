@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
-namespace ECommerce.Tests.Persistence;
+namespace ECommerce.IntegrationTests.Persistence;
 
 /// <summary>
 /// Tests persistence materialization of domain entities.

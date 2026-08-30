@@ -2,7 +2,7 @@ using ECommerce.Application.Features.Orders.Commands.CreateOrder;
 using FluentAssertions;
 using Xunit;
 
-namespace ECommerce.Tests.Features.Orders.Commands.CreateOrder;
+namespace ECommerce.Application.Tests.Features.Orders.Commands.CreateOrder;
 
 /// <summary>
 /// Tests validation of the create-order input contract.

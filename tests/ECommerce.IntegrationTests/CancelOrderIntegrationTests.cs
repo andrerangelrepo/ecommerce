@@ -7,7 +7,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
-namespace ECommerce.Tests.Integration;
+namespace ECommerce.IntegrationTests;
 
 /// <summary>
 /// Verifies that cancelling an order through the HTTP API persists the change,
