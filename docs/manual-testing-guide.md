@@ -679,11 +679,16 @@ curl -i http://localhost:5000/api/orders/99999999-9999-9999-9999-999999999999 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-```
-(corpo vazio)
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+  "title": "Order not found",
+  "status": 404,
+  "traceId": "00-...-01"
+}
 ```
 
-- [x] `id` na rota não é um GUID válido
+- [x] `id` na rota não é um GUID válido — não passa pelo endpoint (a rota `{id:guid}` não casa), então é um `404` genuinamente vazio do próprio roteamento do ASP.NET Core, não o `OrderNotFoundProblem` do cenário acima
 
 ```bash
 curl -i http://localhost:5000/api/orders/nao-e-um-guid \
@@ -736,11 +741,16 @@ curl -i -X PATCH http://localhost:5000/api/orders/99999999-9999-9999-9999-999999
   -H "Authorization: Bearer $TOKEN"
 ```
 
-```
-(corpo vazio)
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+  "title": "Order not found",
+  "status": 404,
+  "traceId": "00-...-01"
+}
 ```
 
-- [x] `id` na rota não é um GUID válido
+- [x] `id` na rota não é um GUID válido — mesmo caso do endpoint anterior: a rota não casa, `404` vazio do roteamento, não passa pelo `OrderNotFoundProblem`
 
 ```bash
 curl -i -X PATCH http://localhost:5000/api/orders/nao-e-um-guid/cancel \
@@ -801,8 +811,11 @@ Os cenários marcados `[x]` acima foram validados manualmente (runtime) ao longo
 | `POST /api/orders` — validação de entrada (todas as regras) | [`CreateOrderCommandValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandValidatorTests.cs) |
 | `POST /api/orders` — persistência via `AddAsync`, mapeamento `Order` → `CreateOrderResult`, `CancellationToken` propagado | [`CreateOrderCommandHandlerTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Commands/CreateOrder/CreateOrderCommandHandlerTests.cs) |
 | `GET /api/orders` — validação de `page`/`pageSize` (`<= 0`) | [`GetOrdersQueryValidatorTests.cs`](../tests/ECommerce.Application.Tests/Features/Orders/Queries/GetOrders/GetOrdersQueryValidatorTests.cs) |
-| Fluxo completo `POST → GET → PATCH cancel → GET`, e cancelamento repetido (`409`) | [`CancelOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CancelOrderIntegrationTests.cs) |
+| Fluxo completo `POST → GET → PATCH cancel → GET`, cancelamento repetido (`409`), e cancelar pedido inexistente (`404`) | [`CancelOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CancelOrderIntegrationTests.cs) |
 | `POST /api/orders` fim a fim — sem token (`401`), payload inválido via pipeline real (`400`), criação + releitura provando persistência real com `TotalAmount`/`TotalPrice` calculados pelo domínio | [`CreateOrderIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/CreateOrderIntegrationTests.cs) |
+| `GET /api/orders/{id}` fim a fim — pedido inexistente (`404`, corpo real `application/problem+json`) | [`GetOrderByIdIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/GetOrderByIdIntegrationTests.cs) |
+| `GET /api/orders` fim a fim — listagem válida (`200`), listagem com um pedido real (mapeamento `Order` → `OrderListItemResponse` exercitado com dado real, não só banco vazio), `page`/`pageSize` não numérico (`400`, regressão do bug `500`) | [`GetOrdersIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/GetOrdersIntegrationTests.cs) |
+| `POST /auth/login` fim a fim — credenciais válidas (`200`), credenciais inválidas (`401`) | [`LoginIntegrationTests.cs`](../tests/ECommerce.IntegrationTests/LoginIntegrationTests.cs) |
 | Invariantes do Domain: sem itens, `Quantity`/`UnitPrice` zero ou negativo, `TotalAmount`, status inicial `Pending`, `Order.Cancel()` (`Pending`/`Cancelled`/`Confirmed`) — CT-DOMAIN-01 a 10 | [`OrderTests.cs`](../tests/ECommerce.Application.Tests/Domain/Entities/OrderTests.cs) |
 
 Todos os quatro Handlers (`CreateOrder`, `GetOrderById`, `GetOrders`, `CancelOrder`) e os validators relevantes (`CreateOrderCommand`, `GetOrdersQuery`) têm teste unitário dedicado — gap fechado na TASK 10.
