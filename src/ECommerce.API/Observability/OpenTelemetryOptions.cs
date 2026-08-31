@@ -19,10 +19,21 @@ public sealed class OpenTelemetryOptions
     public string ServiceName { get; init; } = string.Empty;
 
     /// <summary>
-    /// Gets whether traces/metrics are also written to the console — useful for local
-    /// development and demonstration; not intended as a production export strategy.
+    /// Gets whether traces are also written to the console — useful for local development
+    /// and demonstration; not intended as a production export strategy. Defaults to
+    /// <see langword="false"/>: the raw span dump (~20 lines each, most of it identical
+    /// boilerplate — Resource/SDK metadata repeated on every span) drowns out Serilog's
+    /// curated log lines for day-to-day use. Enable it when inspecting span hierarchy.
     /// </summary>
     public bool ConsoleExporterEnabled { get; init; }
+
+    /// <summary>
+    /// Gets whether metrics are also written to the console. Defaults to <see langword="false"/>:
+    /// unlike traces, metrics export on a fixed timer regardless of traffic, so leaving this on
+    /// floods the console with periodic dumps even when the API is idle. Enable it only when
+    /// actively inspecting metrics locally.
+    /// </summary>
+    public bool MetricsConsoleExporterEnabled { get; init; }
 
     /// <summary>
     /// Gets the optional OTLP exporter settings, disabled by default so the application

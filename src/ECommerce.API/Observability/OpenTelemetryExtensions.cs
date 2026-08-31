@@ -63,9 +63,13 @@ public static class OpenTelemetryExtensions
                     .AddAspNetCoreInstrumentation()
                     .AddRuntimeInstrumentation();
 
-                if (options.ConsoleExporterEnabled)
+                if (options.MetricsConsoleExporterEnabled)
                 {
-                    metrics.AddConsoleExporter();
+                    // Metrics export on a fixed timer regardless of traffic — the default
+                    // interval floods the console with periodic dumps even when idle, so
+                    // it's widened here whenever this (opt-in) exporter is turned on.
+                    metrics.AddConsoleExporter((_, readerOptions) =>
+                        readerOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 30_000);
                 }
 
                 if (options.Otlp.Enabled)
