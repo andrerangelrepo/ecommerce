@@ -22,9 +22,11 @@ public static class DependencyInjection
             config.RegisterServicesFromAssembly(
                 typeof(DependencyInjection).Assembly);
 
-            // Order matters: MediatR runs behaviors in registration order, so a request
-            // is logged (including invalid ones) before ValidationBehavior can reject it.
+            // Order matters: MediatR runs behaviors in registration order. Logging wraps
+            // everything so even invalid requests are measured; tracing starts its span
+            // next so validation failures are recorded inside it, not around it.
             config.AddOpenBehavior(typeof(LoggingBehavior<,>));
+            config.AddOpenBehavior(typeof(TracingBehavior<,>));
             config.AddOpenBehavior(typeof(ValidationBehavior<,>));
         });
 

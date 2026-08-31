@@ -18,6 +18,10 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Database", $"Data Source={_databasePath}");
+
+        // The console exporter adds real setup/flush overhead per host — these tests verify
+        // HTTP behavior, not telemetry output, so exporting would only slow the suite down.
+        builder.UseSetting("OpenTelemetry:ConsoleExporterEnabled", "false");
     }
 
     /// <inheritdoc />

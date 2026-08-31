@@ -2,6 +2,7 @@ using ECommerce.API.Authentication;
 using ECommerce.API.Endpoints.Auth;
 using ECommerce.API.Endpoints.Orders;
 using ECommerce.API.ExceptionHandling;
+using ECommerce.API.Observability;
 using ECommerce.API.OpenApi;
 using ECommerce.Application;
 using ECommerce.Infrastructure;
@@ -12,7 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services));
+    .ReadFrom.Services(services)
+    .Enrich.With<ActivityEnricher>());
 
 builder.Services
     .AddApplication()
@@ -27,6 +29,7 @@ builder.Services.AddOpenApi(options =>
 });
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddHealthChecks();
+builder.Services.AddOpenTelemetryObservability(builder.Configuration);
 
 var app = builder.Build();
 

@@ -36,20 +36,22 @@ Marcar `[x]` conforme cada item for implementado.
 
 ## 4. Desejáveis — não eliminatórios
 
-- [ ] Logging com Serilog
-  - [ ] `UseSerilog()` configurado em `Program.cs` — os pacotes (`Serilog`, `Serilog.Sinks.Console`) foram **removidos** de `Directory.Packages.props`/`ECommerce.Infrastructure.csproj` na TASK 13 (SUBTASK 13.21, hardening) por estarem referenciados sem nenhum uso real; reinstalar (`dotnet add package Serilog`) é trivial se/quando este item for implementado
-  - [ ] `LoggingBehavior` no pipeline do MediatR, registrando:
-    - [ ] Command/Query recebido
-    - [ ] Response
-    - [ ] Tempo de execução
-  - [ ] Garantir que nunca loga senha, signing key ou JWT completo
+- [x] Logging com Serilog (TASK 14)
+  - [x] `UseSerilog()` configurado em `Program.cs`, lendo de `appsettings.json` (`Serilog.AspNetCore`/`Serilog.Sinks.Console`/`Serilog.Settings.Configuration`)
+  - [x] `LoggingBehavior` no pipeline do MediatR, registrando:
+    - [x] Command/Query recebido (`Handling {RequestName}`)
+    - [x] Tempo de execução (`Handled {RequestName} in {ms} ms`)
+    - [x] Falhas, classificadas por severidade (`Warning` para `ValidationException`/`OrderCannotBeCancelledException`, `Error` para o resto)
+  - [x] Garantido que nunca loga senha, signing key ou JWT completo — `Login` nem passa pelo MediatR/`LoggingBehavior`; requests nunca são serializados inteiros (`{@Request}` nunca usado); varredura de hardening confirmou zero ocorrências de `Password`/`AccessToken`/`Authorization`/`Jwt:Key` em qualquer log
+- [x] OpenTelemetry (TASK 15)
+  - [x] instrumentação ASP.NET Core (traces via `AddAspNetCoreInstrumentation`, um span por request HTTP)
+  - [x] instrumentação de Commands/Queries (`TracingBehavior` + `ActivitySource` próprio do Application, span aninhado sob o span HTTP)
+  - [x] métricas ASP.NET Core + runtime .NET (`AddRuntimeInstrumentation`), sem métricas de negócio arbitrárias
+  - [x] exportação para console, configurável via `OpenTelemetry:ConsoleExporterEnabled`; OTLP preparado (`OpenTelemetry:Otlp`) mas desligado por padrão — nenhum collector é obrigatório para rodar/testar
+  - [x] correlação log↔trace via `TraceId`/`SpanId` (`ActivityEnricher`, lendo `Activity.Current`, sem pacote de correlação extra)
 - [ ] SonarQube ou `dotnet-sonarscanner`
   - [ ] configurado no `docker-compose.yml` (depende do item 1)
   - [ ] meta: 0 Blocker, 0 Critical
-- [ ] OpenTelemetry
-  - [ ] instrumentação ASP.NET Core
-  - [ ] instrumentação HTTP, quando aplicável
-  - [ ] exportação para console
 
 ---
 

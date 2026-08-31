@@ -12,6 +12,7 @@ Backend API para um e-commerce simples, implementado em .NET 10 com Clean Archit
 - [Migrations](#migrations)
 - [Testes](#testes)
 - [Decisões Técnicas](#decisões-técnicas)
+- [Observability](#observability)
 - [Status do Projeto e Trade-offs Conscientes](#status-do-projeto-e-trade-offs-conscientes)
 - [Notas de Segurança](#notas-de-segurança)
 - [Relatório de Hardening](docs/hardening-report.md)
@@ -179,11 +180,11 @@ FROM Orders o JOIN OrderItems i ON i.OrderId = o.Id;
 dotnet test
 ```
 
-Roda os dois projetos de teste juntos (50 testes). Para rodar isoladamente:
+Roda os dois projetos de teste juntos (63 testes). Para rodar isoladamente:
 
 ```bash
-dotnet test tests/ECommerce.Application.Tests  # 42 testes — rápidos, isolados (mocks, sem I/O real)
-dotnet test tests/ECommerce.IntegrationTests   # 8 testes — WebApplicationFactory, SQLite real
+dotnet test tests/ECommerce.Application.Tests  # 50 testes — rápidos, isolados (mocks, sem I/O real)
+dotnet test tests/ECommerce.IntegrationTests   # 13 testes — WebApplicationFactory, SQLite real
 ```
 
 Detalhes de cada modalidade de teste em [Testes](#testes).
@@ -237,11 +238,11 @@ Requer a ferramenta `dotnet-ef` instalada (`dotnet tool install --global dotnet-
 
 ## Testes
 
-**61 testes no total**, divididos em dois projetos com propósitos diferentes:
+**63 testes no total**, divididos em dois projetos com propósitos diferentes:
 
 | Projeto | Testes | O que cobre | Velocidade |
 |---|---:|---|---|
-| `ECommerce.Application.Tests` | 48 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior`, `LoggingBehavior` | Rápido — sem I/O real, sem HTTP |
+| `ECommerce.Application.Tests` | 50 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior`, `LoggingBehavior`, `TracingBehavior` | Rápido — sem I/O real, sem HTTP |
 | `ECommerce.IntegrationTests` | 13 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo login, os 404 dos dois endpoints e o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
 
 Nenhum teste depende de banco local pré-existente ou de outro processo já rodando — `dotnet test` sozinho é suficiente, cada teste de integração usa um SQLite isolado descartável.
@@ -368,6 +369,30 @@ Nunca loga o request/response inteiro (`{@Request}`/`{@Response}`) — só o nom
 
 Falhas são classificadas por tipo de exceção, não por status HTTP — o Behavior não conhece `400`/`409`/`500`/`ProblemDetails`, só `ValidationException`/`OrderCannotBeCancelledException` (`Warning`, sem stack trace — são resultados esperados, não erro operacional) vs. qualquer outra exceção (`Error`, com stack trace completo). A mesma exceção também é logada pelo `GlobalExceptionHandler` (que trata o lado HTTP) — a duplicação é intencional (dois contextos diferentes: Application vs. HTTP), mas os dois usam a mesma classificação de nível, então uma exceção de validação nunca aparece como `Error` num lugar e `Warning` noutro. Em todos os casos a exceção é relançada (`throw;`) — o Behavior nunca engole nem substitui, o tratamento HTTP continua 100% no `GlobalExceptionHandler`.
 
+### Por que `TracingBehavior` usa `System.Diagnostics.ActivitySource`, não o SDK do OpenTelemetry?
+
+`ApplicationTelemetry.ActivitySource` (`Application/Observability`) e `TracingBehavior` (`Application/Behaviors`) dependem só de `System.Diagnostics` — parte do BCL, sem pacote NuGet. A Application nunca referencia `OpenTelemetry.*`; quem registra esse `ActivitySource` junto ao SDK (`tracing.AddSource(...)`) e configura exportação é a API, em `Observability/OpenTelemetryExtensions.cs`. Isso preserva a mesma separação já usada para logging (`Application` → abstração do BCL; `API` → implementação concreta) — se um dia trocarmos OpenTelemetry por outra coisa, ou se ninguém escutar o `ActivitySource`, `Application` nem percebe: `Activity.StartActivity(...)` retorna `null` silenciosamente quando não há listener.
+
+Cada Command/Query gera um span (nomeado com o tipo, ex.: `CreateOrderCommand`) aninhado sob o span HTTP que o ASP.NET Core já cria automaticamente — confirmado rodando a API e vendo `ParentSpanId` do span do Command apontar pro `SpanId` do span HTTP, mesmo `TraceId` nos dois. Só uma tag é adicionada (`application.request.name`), nunca o payload — `{@Request}`/`{@Response}`/`JsonSerializer.Serialize` nunca aparecem no `TracingBehavior`, e `CustomerId`/`OrderId` nunca viram tag (evita cardinalidade alta numa métrica/trace).
+
+Em falha, o span é marcado com `ActivityStatusCode.Error` (sem duplicar stack trace manualmente — isso já é coberto pelo `LoggingBehavior`) e a exceção é sempre relançada. Ordem dos behaviors: `LoggingBehavior` → `TracingBehavior` → `ValidationBehavior` → `Handler` — logging mede a tentativa inteira, tracing cria o span, e uma falha de validação termina dentro do span (visível como span de erro), não fora dele.
+
+### Por que correlacionar logs e traces via `Activity.Current`, sem pacote extra?
+
+`ActivityEnricher` (`API/Observability`) lê `Activity.Current?.TraceId`/`SpanId` diretamente e injeta como propriedades em todo evento do Serilog, via `.Enrich.With<ActivityEnricher>()`. Não foi adicionado um pacote de correlação dedicado (ex.: `Serilog.Enrichers.Span`) porque `Activity.Current` já é preenchido automaticamente assim que o OpenTelemetry SDK está configurado — dado que já temos, só faltava expor. O resultado: qualquer linha de log ganha `TraceId`/`SpanId`, permitindo sair de um log específico e achar o trace inteiro daquela requisição, sem criar um `CorrelationId` paralelo (o `TraceId` já cumpre esse papel).
+
+## Observability
+
+O projeto tem três pilares de observabilidade, cada um com uma responsabilidade distinta:
+
+- **Logs** — [Serilog](#por-que-serilog-só-no-projeto-api), configurado 100% via `appsettings.json` (nada hardcoded no `Program.cs`). Cada Command/Query gera `Handling {RequestName}` / `Handled {RequestName} in {ms} ms` via `LoggingBehavior`; falhas conhecidas (`ValidationException`, `OrderCannotBeCancelledException`) logam como `Warning`, o resto como `Error`.
+- **Traces** — OpenTelemetry, com instrumentação automática de ASP.NET Core (um span por request HTTP) e um `TracingBehavior` próprio que cria um span por Command/Query, aninhado sob o span HTTP correspondente (mesmo `TraceId`, `ParentSpanId` apontando pro span pai).
+- **Métricas** — instrumentação automática de ASP.NET Core (requisições, latência) e do runtime .NET (GC, heap, threads) — nenhuma métrica de negócio (`orders_created_total` etc.) foi criada nesta entrega; isso exigiria uma decisão consciente sobre semântica e cardinalidade, fora do escopo de observabilidade técnica.
+
+Logs e traces se correlacionam pelo `TraceId` (injetado em todo log via `Activity.Current`), então dá pra sair de uma linha de log específica e encontrar a árvore de spans inteira daquela requisição, e vice-versa.
+
+Por padrão, tudo é exportado só para o **console** (`OpenTelemetry:ConsoleExporterEnabled` no `appsettings.json`) — suficiente pra rodar localmente ou via `docker compose logs -f api` sem exigir nenhuma infraestrutura externa (Jaeger, Prometheus, Grafana, um Collector). Isso é deliberado: o Console Exporter é um recurso de demonstração, não a estratégia de observabilidade de produção. Existe uma seção `OpenTelemetry:Otlp` (`Enabled`/`Endpoint`) já preparada para exportar via OTLP para um collector real — desligada por padrão (`Enabled: false`), então a aplicação nunca depende de um collector estar de pé para funcionar, subir, ou passar nos testes.
+
 ## Status do Projeto e Trade-offs Conscientes
 
 Todos os itens da **Stack Obrigatória** do desafio estão implementados: domínio, CQRS/MediatR, EF Core + SQLite com migrations automáticas, JWT, FluentValidation via pipeline, testes unitários dos 4 Handlers, Docker + Docker Compose, e este README.
@@ -377,11 +402,11 @@ Os itens listados como **"Desejável — Não Eliminatório"** no enunciado rece
 | Item | Status |
 |---|---|
 | Testes de integração com `WebApplicationFactory` | ✅ Implementado — 13 testes, cobrindo `POST`/`GET`/`PATCH` e login |
-| Logging com Serilog + `LoggingBehavior` | ❌ Não implementado — decisão consciente de priorizar o restante do escopo obrigatório. Os pacotes não usados foram removidos do projeto (não ficam como peso morto); reinstalar é trivial se este item for retomado |
+| Logging com Serilog + `LoggingBehavior` | ✅ Implementado — ver [Observability](#observability) |
+| OpenTelemetry (traces + métricas) | ✅ Implementado — ver [Observability](#observability) |
 | SonarQube / `dotnet-sonarscanner` | ❌ Não implementado |
-| OpenTelemetry | ❌ Não implementado |
 
-Essas três ausências são rastreadas com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/pendencias.md`](docs/pendencias.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
+Essa ausência é rastreada com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/pendencias.md`](docs/pendencias.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
 
 Uma auditoria de hardening arquitetural dedicada (build, testes, camadas, persistência, segurança, Docker) foi conduzida ao final da implementação — resultado consolidado em [`docs/hardening-report.md`](docs/hardening-report.md).
 
