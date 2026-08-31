@@ -6,8 +6,13 @@ using ECommerce.API.OpenApi;
 using ECommerce.Application;
 using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Persistence;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services));
 
 builder.Services
     .AddApplication()
@@ -24,6 +29,8 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+app.UseSerilogRequestLogging();
 
 app.UseExceptionHandler();
 

@@ -1,6 +1,5 @@
 using ECommerce.Application.Behaviors;
 using FluentValidation;
-using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ECommerce.Application;
@@ -19,15 +18,18 @@ public static class DependencyInjection
         this IServiceCollection services)
     {
         services.AddMediatR(config =>
+        {
             config.RegisterServicesFromAssembly(
-                typeof(DependencyInjection).Assembly));
+                typeof(DependencyInjection).Assembly);
+
+            // Order matters: MediatR runs behaviors in registration order, so a request
+            // is logged (including invalid ones) before ValidationBehavior can reject it.
+            config.AddOpenBehavior(typeof(LoggingBehavior<,>));
+            config.AddOpenBehavior(typeof(ValidationBehavior<,>));
+        });
 
         services.AddValidatorsFromAssembly(
             typeof(DependencyInjection).Assembly);
-
-        services.AddTransient(
-            typeof(IPipelineBehavior<,>),
-            typeof(ValidationBehavior<,>));
 
         return services;
     }

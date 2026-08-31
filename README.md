@@ -237,11 +237,11 @@ Requer a ferramenta `dotnet-ef` instalada (`dotnet tool install --global dotnet-
 
 ## Testes
 
-**57 testes no total**, divididos em dois projetos com propósitos diferentes:
+**61 testes no total**, divididos em dois projetos com propósitos diferentes:
 
 | Projeto | Testes | O que cobre | Velocidade |
 |---|---:|---|---|
-| `ECommerce.Application.Tests` | 44 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior` | Rápido — sem I/O real, sem HTTP |
+| `ECommerce.Application.Tests` | 48 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior`, `LoggingBehavior` | Rápido — sem I/O real, sem HTTP |
 | `ECommerce.IntegrationTests` | 13 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo login, os 404 dos dois endpoints e o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
 
 Nenhum teste depende de banco local pré-existente ou de outro processo já rodando — `dotnet test` sozinho é suficiente, cada teste de integração usa um SQLite isolado descartável.
@@ -343,6 +343,30 @@ O contrato OpenAPI continua gerado pelo suporte nativo do ASP.NET Core (`AddOpen
 ### Por que login não passa pelo MediatR/Application?
 
 `LoginEndpoint` valida a credencial fixa e emite o token chamando `ITokenService` diretamente, sem `LoginCommand`. Autenticação é uma preocupação do boundary HTTP, não uma regra de negócio do domínio de pedidos: não há entidade, invariante ou persistência envolvida. Como consequência, a camada Application nunca importa nada relacionado a JWT.
+
+### Por que Serilog só no projeto API?
+
+`Serilog.AspNetCore`/`Serilog.Sinks.Console`/`Serilog.Settings.Configuration` são referenciados só em `ECommerce.API`, configurado em `Program.cs` via `builder.Host.UseSerilog(...)`, substituindo o provider de log padrão do ASP.NET Core para toda a aplicação (Domain/Application/Infrastructure continuam só usando `ILogger<T>` do BCL, sem saber que Serilog existe por baixo). `Program.cs` só chama `ReadFrom.Configuration(context.Configuration)` e `ReadFrom.Services(services)` — nenhum sink/enricher/nível é hardcoded em código; tudo isso (`MinimumLevel`, `WriteTo`, `Enrich`) vem da seção `Serilog` do `appsettings.json`. Isso evita um bug real que apareceu durante a implementação: declarar `WriteTo.Console()` tanto em código quanto no JSON registra **dois** sinks de console, duplicando cada linha de log.
+
+### Por que `Microsoft`/`Microsoft.AspNetCore`/`Microsoft.EntityFrameworkCore` como `Warning` no `appsettings.json` base?
+
+Esses namespaces de framework são extremamente verbosos em `Information`/`Debug` (cada `DbCommand` do EF Core, cada início/fim de request do Kestrel). Suprimi-los para `Warning` no `appsettings.json` base mantém o log de produção legível — só aparece o que é nosso ou é um problema real. `appsettings.Development.json` sobrescreve `Default` para `Debug` e `Microsoft.AspNetCore` de volta para `Information`, então localmente ainda dá pra ver o ciclo de vida de cada request; `Microsoft.EntityFrameworkCore` continua suprimido mesmo em desenvolvimento (não sobrescrito), já que o SQL gerado é verboso demais para uso corriqueiro — quando esse nível de detalhe for necessário, dá pra sobrescrever via variável de ambiente (`Serilog__MinimumLevel__Override__Microsoft.EntityFrameworkCore=Debug`) sem tocar em código. `Warning` é um piso, não uma mudez: qualquer evento em `Warning`/`Error`/`Fatal` desses namespaces continua aparecendo — só `Information`/`Debug` é suprimido.
+
+### Por que `app.UseSerilogRequestLogging()`?
+
+Sem esse middleware, cada request gera várias linhas do ASP.NET Core (`Request starting`, `Executing endpoint`, `Executed endpoint`, `Request finished`) — genérico e caro de ler. `UseSerilogRequestLogging()` substitui isso por uma única linha estruturada por request (`HTTP POST /api/orders responded 201 in 54 ms`, com `RequestMethod`/`RequestPath`/`StatusCode`/`Elapsed` como propriedades pesquisáveis, não só texto). Em produção (`Microsoft.AspNetCore` suprimido para `Warning`), essa é a única linha por request que sobra — confirmado rodando a API em `Production` e vendo só essa linha no console, sem nenhum ruído do framework por baixo.
+
+### Por que `UseSerilogRequestLogging()` vem antes de `UseExceptionHandler()`?
+
+Middleware do ASP.NET Core forma camadas aninhadas: quem é registrado primeiro "embrulha" tudo que vem depois. Colocar `UseSerilogRequestLogging()` **antes** de `UseExceptionHandler()` faz o logging ser a camada mais externa, então ele só escreve a linha de conclusão depois que o exception handler (mais interno) já decidiu o status code final. Registrar na ordem inversa (como uma versão inicial desta implementação fez) parece inofensivo, mas quebra em qualquer request que dispare uma exceção tratada: reproduzi isso rodando a API e forçando um `409` real (cancelar o mesmo pedido duas vezes) — com `UseExceptionHandler()` por fora, a resposta HTTP era `409` de verdade, mas a linha de log dizia `responded 500`, porque o middleware de logging via a exceção (antes dela ser traduzida) e não o resultado final. Com `UseSerilogRequestLogging()` por fora, a mesma requisição loga `responded 409` corretamente — confirmado também para o caso `400` de payload/paginação inválida.
+
+### Por que `LoggingBehavior`?
+
+`LoggingBehavior<TRequest, TResponse>` (`Application/Behaviors`) registra início, duração e resultado de todo Command/Query que passa pelo MediatR — `Handling CreateOrderCommand` → `Handled CreateOrderCommand in 42 ms`. Usa `ILogger<T>` do `Microsoft.Extensions.Logging.Abstractions` (só a abstração, sem pacote do Serilog na Application), então a camada continua sem saber que Serilog existe — quem faz a ponte é a API, no bootstrap. Registrado como Open Behavior via `config.AddOpenBehavior(...)` dentro de `AddMediatR(...)` (não mais um `services.AddTransient(typeof(IPipelineBehavior<,>), ...)` solto), na ordem `LoggingBehavior` → `ValidationBehavior`, para que até requests inválidas sejam medidas e logadas como tentativa de processamento.
+
+Nunca loga o request/response inteiro (`{@Request}`/`{@Response}`) — só o nome do tipo (`RequestName`) e a duração, como propriedades estruturadas (não interpolação de string). Isso é, por construção, suficiente para nunca vazar senha/token: `Login` nem passa pelo MediatR (vai direto pra `ITokenService`, sem `LoginCommand`), então `LoggingBehavior` nunca chega a ver `LoginRequest`; para os demais Commands/Queries, como nunca serializamos o objeto inteiro, uma eventual property sensível num futuro DTO não vazaria por acidente.
+
+Falhas são classificadas por tipo de exceção, não por status HTTP — o Behavior não conhece `400`/`409`/`500`/`ProblemDetails`, só `ValidationException`/`OrderCannotBeCancelledException` (`Warning`, sem stack trace — são resultados esperados, não erro operacional) vs. qualquer outra exceção (`Error`, com stack trace completo). A mesma exceção também é logada pelo `GlobalExceptionHandler` (que trata o lado HTTP) — a duplicação é intencional (dois contextos diferentes: Application vs. HTTP), mas os dois usam a mesma classificação de nível, então uma exceção de validação nunca aparece como `Error` num lugar e `Warning` noutro. Em todos os casos a exceção é relançada (`throw;`) — o Behavior nunca engole nem substitui, o tratamento HTTP continua 100% no `GlobalExceptionHandler`.
 
 ## Status do Projeto e Trade-offs Conscientes
 
