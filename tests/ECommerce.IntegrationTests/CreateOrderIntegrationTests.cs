@@ -17,16 +17,11 @@ namespace ECommerce.IntegrationTests;
 /// handler, the domain's own invariants and calculations, the repository, EF Core, and
 /// a real SQLite database.
 /// </summary>
-public sealed class CreateOrderIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+/// <remarks>Initializes a new instance of the <see cref="CreateOrderIntegrationTests"/> class.</remarks>
+/// <param name="factory">The API factory providing the in-process test server.</param>
+public sealed class CreateOrderIntegrationTests(CustomWebApplicationFactory factory) : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly HttpClient _client;
-
-    /// <summary>Initializes a new instance of the <see cref="CreateOrderIntegrationTests"/> class.</summary>
-    /// <param name="factory">The API factory providing the in-process test server.</param>
-    public CreateOrderIntegrationTests(CustomWebApplicationFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     /// <summary>Proves the API/JWT layer: the endpoint rejects requests without a token.</summary>
     [Fact]

@@ -49,9 +49,12 @@ Marcar `[x]` conforme cada item for implementado.
   - [x] métricas ASP.NET Core + runtime .NET (`AddRuntimeInstrumentation`), sem métricas de negócio arbitrárias
   - [x] exportação para console, configurável via `OpenTelemetry:ConsoleExporterEnabled`; OTLP preparado (`OpenTelemetry:Otlp`) mas desligado por padrão — nenhum collector é obrigatório para rodar/testar
   - [x] correlação log↔trace via `TraceId`/`SpanId` (`ActivityEnricher`, lendo `Activity.Current`, sem pacote de correlação extra)
-- [ ] SonarQube ou `dotnet-sonarscanner`
-  - [ ] configurado no `docker-compose.yml` (depende do item 1)
-  - [ ] meta: 0 Blocker, 0 Critical
+- [x] SonarQube / `dotnet-sonarscanner` (TASK 16) — infraestrutura pronta, análise real pendente de conta externa
+  - [x] `coverlet.collector` + [`tests/coverlet.runsettings`](../tests/coverlet.runsettings) gerando cobertura em formato `opencover`
+  - [x] workflow [`quality.yml`](../.github/workflows/quality.yml) (`build → test com coverage → sonar begin/end`), condicionado à existência do secret `SONAR_TOKEN` — build e testes rodam sempre, mesmo sem Sonar configurado
+  - [x] exclusões configuradas (Migrations/gerado fora da análise; Migrations/`Program.cs`/DTOs simples fora da cobrança de cobertura, sem excluir Handlers/Domain/Behaviors)
+  - [x] token nunca versionado — só `${{ secrets.SONAR_TOKEN }}` no workflow
+  - [ ] **análise real (Quality Gate de verdade)** — exige conectar uma conta SonarCloud própria (fora do que esta sessão consegue provisionar); enquanto isso, auditoria manual completa cobrindo as mesmas categorias em [`docs/sonar-audit.md`](sonar-audit.md) — 0 bugs, 0 vulnerabilidades, 4 hotspots revisados como seguros, 7 code smells corrigidos
 
 ---
 

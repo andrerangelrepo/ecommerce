@@ -18,16 +18,11 @@ namespace ECommerce.IntegrationTests;
 /// <c>ValidationBehavior</c> ever run — so no unit test of the Handler or Validator can
 /// catch this; only an HTTP-level integration test exercises the real binding pipeline.
 /// </summary>
-public sealed class GetOrdersIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+/// <remarks>Initializes a new instance of the <see cref="GetOrdersIntegrationTests"/> class.</remarks>
+/// <param name="factory">The API factory providing the in-process test server.</param>
+public sealed class GetOrdersIntegrationTests(CustomWebApplicationFactory factory) : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly HttpClient _client;
-
-    /// <summary>Initializes a new instance of the <see cref="GetOrdersIntegrationTests"/> class.</summary>
-    /// <param name="factory">The API factory providing the in-process test server.</param>
-    public GetOrdersIntegrationTests(CustomWebApplicationFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     /// <summary>A valid request returns 200 with the paginated shape, even with no orders yet.</summary>
     [Fact]
@@ -41,6 +36,38 @@ public sealed class GetOrdersIntegrationTests : IClassFixture<CustomWebApplicati
         var body = await response.Content.ReadFromJsonAsync<GetOrdersResponse>();
         body!.Page.Should().Be(1);
         body.PageSize.Should().Be(10);
+    }
+
+    /// <summary>
+    /// Unlike the pagination-shape test above, this creates a real order first — the only
+    /// test that exercises the list endpoint's own item mapping (<c>Order</c> →
+    /// <c>OrderListItemResponse</c>) with actual data. A handler-level unit test can't
+    /// catch a bug in that specific mapping since it never reaches the API layer, and the
+    /// empty-list test never has an item to map.
+    /// </summary>
+    [Fact]
+    public async Task GetOrders_ShouldReturnCreatedOrder_WhenOneExists()
+    {
+        await AuthenticateAsync();
+
+        var customerId = Guid.NewGuid();
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/orders",
+            new CreateOrderRequest(
+                customerId,
+                [new CreateOrderItemRequest("Monitor", 2, 500m)]));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateOrderResponse>();
+
+        var response = await _client.GetAsync("/api/orders?page=1&pageSize=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<GetOrdersResponse>();
+        body!.Items.Should().Contain(item =>
+            item.Id == created!.Id
+            && item.CustomerId == customerId
+            && item.Status == "Pending"
+            && item.TotalAmount == 1000m);
     }
 
     /// <summary>A non-numeric <c>page</c> must return 400, not 500.</summary>

@@ -8,20 +8,15 @@ namespace ECommerce.Application.Behaviors;
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResponse">The response type.</typeparam>
-public sealed class ValidationBehavior<TRequest, TResponse>
+/// <remarks>
+/// Initializes a new instance of the <see cref="ValidationBehavior{TRequest, TResponse}"/> class.
+/// </remarks>
+/// <param name="validators">The validators associated with the request.</param>
+public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
-    private readonly IEnumerable<IValidator<TRequest>> _validators;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ValidationBehavior{TRequest, TResponse}"/> class.
-    /// </summary>
-    /// <param name="validators">The validators associated with the request.</param>
-    public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators)
-    {
-        _validators = validators;
-    }
+    private readonly IEnumerable<IValidator<TRequest>> _validators = validators;
 
     /// <inheritdoc />
     public async Task<TResponse> Handle(

@@ -8,19 +8,14 @@ namespace ECommerce.Application.Features.Orders.Commands.CreateOrder;
 /// <summary>
 /// Handles requests to create an order.
 /// </summary>
-public sealed class CreateOrderCommandHandler
+/// <remarks>
+/// Initializes a new instance of the <see cref="CreateOrderCommandHandler"/> class.
+/// </remarks>
+/// <param name="orderRepository">The order persistence abstraction.</param>
+public sealed class CreateOrderCommandHandler(IOrderRepository orderRepository)
     : IRequestHandler<CreateOrderCommand, CreateOrderResult>
 {
-    private readonly IOrderRepository _orderRepository;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CreateOrderCommandHandler"/> class.
-    /// </summary>
-    /// <param name="orderRepository">The order persistence abstraction.</param>
-    public CreateOrderCommandHandler(IOrderRepository orderRepository)
-    {
-        _orderRepository = orderRepository;
-    }
+    private readonly IOrderRepository _orderRepository = orderRepository;
 
     /// <inheritdoc />
     public async Task<CreateOrderResult> Handle(

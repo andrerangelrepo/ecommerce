@@ -11,16 +11,11 @@ namespace ECommerce.IntegrationTests;
 /// <summary>
 /// Verifies the HTTP-level not-found mapping for <c>GET /api/orders/{id}</c>.
 /// </summary>
-public sealed class GetOrderByIdIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+/// <remarks>Initializes a new instance of the <see cref="GetOrderByIdIntegrationTests"/> class.</remarks>
+/// <param name="factory">The API factory providing the in-process test server.</param>
+public sealed class GetOrderByIdIntegrationTests(CustomWebApplicationFactory factory) : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly HttpClient _client;
-
-    /// <summary>Initializes a new instance of the <see cref="GetOrderByIdIntegrationTests"/> class.</summary>
-    /// <param name="factory">The API factory providing the in-process test server.</param>
-    public GetOrderByIdIntegrationTests(CustomWebApplicationFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     /// <summary>
     /// The endpoint returns null from the handler when no order matches the id; this confirms

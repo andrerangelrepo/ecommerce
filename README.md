@@ -13,6 +13,7 @@ Backend API para um e-commerce simples, implementado em .NET 10 com Clean Archit
 - [Testes](#testes)
 - [Decisões Técnicas](#decisões-técnicas)
 - [Observability](#observability)
+- [Análise Estática (Sonar)](#análise-estática-sonar)
 - [Status do Projeto e Trade-offs Conscientes](#status-do-projeto-e-trade-offs-conscientes)
 - [Notas de Segurança](#notas-de-segurança)
 - [Relatório de Hardening](docs/hardening-report.md)
@@ -180,11 +181,11 @@ FROM Orders o JOIN OrderItems i ON i.OrderId = o.Id;
 dotnet test
 ```
 
-Roda os dois projetos de teste juntos (63 testes). Para rodar isoladamente:
+Roda os dois projetos de teste juntos (64 testes). Para rodar isoladamente:
 
 ```bash
 dotnet test tests/ECommerce.Application.Tests  # 50 testes — rápidos, isolados (mocks, sem I/O real)
-dotnet test tests/ECommerce.IntegrationTests   # 13 testes — WebApplicationFactory, SQLite real
+dotnet test tests/ECommerce.IntegrationTests   # 14 testes — WebApplicationFactory, SQLite real
 ```
 
 Detalhes de cada modalidade de teste em [Testes](#testes).
@@ -238,14 +239,23 @@ Requer a ferramenta `dotnet-ef` instalada (`dotnet tool install --global dotnet-
 
 ## Testes
 
-**63 testes no total**, divididos em dois projetos com propósitos diferentes:
+**64 testes no total**, divididos em dois projetos com propósitos diferentes:
 
 | Projeto | Testes | O que cobre | Velocidade |
 |---|---:|---|---|
 | `ECommerce.Application.Tests` | 50 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior`, `LoggingBehavior`, `TracingBehavior` | Rápido — sem I/O real, sem HTTP |
-| `ECommerce.IntegrationTests` | 13 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo login, os 404 dos dois endpoints e o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
+| `ECommerce.IntegrationTests` | 14 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo login, os 404 dos dois endpoints, a listagem com um pedido real (não só vazia), e o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
 
 Nenhum teste depende de banco local pré-existente ou de outro processo já rodando — `dotnet test` sozinho é suficiente, cada teste de integração usa um SQLite isolado descartável.
+
+### Relatório visual de cobertura
+
+```powershell
+./scripts/coverage-report.ps1              # roda os testes com cobertura e abre o relatório HTML
+./scripts/coverage-report.ps1 -SkipTests   # só reabre o último relatório gerado, sem rodar os testes de novo
+```
+
+Mesmo comando serve pra primeira execução (instala o `dotnet-reportgenerator-globaltool` sozinho, se ainda não existir) e pra todas as seguintes (detecta que a ferramenta já está instalada e pula essa etapa). Gera `TestResults/CoverageReport/index.html` — navegável, com cobertura por projeto/classe/linha — e abre automaticamente. `TestResults/` já está no `.gitignore`.
 
 ## Decisões Técnicas
 
@@ -408,6 +418,20 @@ O projeto tem três pilares de observabilidade, cada um com uma responsabilidade
 Logs e traces se correlacionam pelo `TraceId` (injetado em todo log via `Activity.Current`), então dá pra sair de uma linha de log específica e encontrar a árvore de spans inteira daquela requisição, e vice-versa.
 
 Por padrão, só os **logs** (Serilog) aparecem no console — o `TraceId` em toda linha já mostra que o tracing está ativo e correlacionado, sem precisar do dump bruto de cada span. **Traces** (`OpenTelemetry:ConsoleExporterEnabled`) e **métricas** (`OpenTelemetry:MetricsConsoleExporterEnabled`) ficam desligados do console por padrão — ambos podem ser ligados a qualquer momento via `appsettings.json`/variável de ambiente quando for necessário inspecionar a árvore de spans ou os contadores de runtime localmente; nenhum dos dois exige reiniciar com infraestrutura externa (Jaeger, Prometheus, Grafana, um Collector) — é só uma flag. Isso é deliberado: o Console Exporter é um recurso de demonstração/depuração pontual, não a estratégia de observabilidade de produção nem o modo padrão de rodar a aplicação — o volume de informação (detalhado na auditoria de log abaixo) o torna inadequado como saída padrão. Existe uma seção `OpenTelemetry:Otlp` (`Enabled`/`Endpoint`) já preparada para exportar via OTLP para um collector real — desligada por padrão (`Enabled: false`), então a aplicação nunca depende de um collector estar de pé para funcionar, subir, ou passar nos testes.
+
+## Análise Estática (Sonar)
+
+O projeto está preparado para análise estática via [SonarCloud](https://sonarcloud.io), mas isso **não é dependência de runtime** — `dotnet run`/`docker compose up` funcionam normalmente sem Sonar configurado nenhum.
+
+O que já está pronto:
+
+- **Coverage**: `coverlet.collector` nos dois projetos de teste, com [`tests/coverlet.runsettings`](tests/coverlet.runsettings) gerando o relatório no formato `opencover` (o que o SonarScanner para .NET espera) e excluindo Migrations geradas pelo EF Core e `Program.cs` (composition root sem lógica própria) do cálculo de cobertura — não da análise estática, só da cobrança de teste.
+- **CI**: [`.github/workflows/quality.yml`](.github/workflows/quality.yml) roda `restore → build → test com coverage` sempre; o bloco de Sonar (`sonarscanner begin/end`) só executa se o secret `SONAR_TOKEN` estiver configurado no repositório — sem ele, o workflow pula a análise (com uma linha explicando por quê) mas build e testes continuam rodando e reportando normalmente. Isso evita que o CI fique permanentemente vermelho num repositório onde ninguém ainda conectou uma conta Sonar.
+- **Exclusões configuradas no scanner**: `sonar.exclusions` (Migrations/`bin`/`obj` — não analisados, são gerados) e `sonar.coverage.exclusions` (Migrations, `Program.cs`, DTOs/contratos HTTP simples, classes `*Options`) — nenhuma delas remove Handlers, Domain ou Behaviors da análise ou da cobrança de cobertura.
+
+**Para rodar de verdade**, é preciso conectar uma conta SonarCloud própria (fora do que eu consigo fazer por aqui): criar/entrar em uma organização em sonarcloud.io, importar este repositório, gerar um token e cadastrá-lo como o secret `SONAR_TOKEN` em Settings → Secrets and variables → Actions do GitHub. O `Project Key`/`Organization` no workflow (`andrerangelrepo_ecommerce` / `andrerangelrepo`) seguem a convenção padrão do SonarCloud para este repositório — ajustar se a organização real usar outro nome.
+
+**Enquanto isso**, uma auditoria manual completa foi feita cobrindo as mesmas categorias que o Sonar analisaria (bugs, vulnerabilidades, security hotspots, code smells, nullability, exception handling, async, duplicação, etc.) — resultado em [`docs/sonar-audit.md`](docs/sonar-audit.md).
 
 ## Status do Projeto e Trade-offs Conscientes
 

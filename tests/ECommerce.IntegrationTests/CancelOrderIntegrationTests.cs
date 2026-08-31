@@ -14,16 +14,11 @@ namespace ECommerce.IntegrationTests;
 /// Verifies that cancelling an order through the HTTP API persists the change,
 /// not just the in-memory result of a single request.
 /// </summary>
-public sealed class CancelOrderIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+/// <remarks>Initializes a new instance of the <see cref="CancelOrderIntegrationTests"/> class.</remarks>
+/// <param name="factory">The API factory providing the in-process test server.</param>
+public sealed class CancelOrderIntegrationTests(CustomWebApplicationFactory factory) : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly HttpClient _client;
-
-    /// <summary>Initializes a new instance of the <see cref="CancelOrderIntegrationTests"/> class.</summary>
-    /// <param name="factory">The API factory providing the in-process test server.</param>
-    public CancelOrderIntegrationTests(CustomWebApplicationFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     /// <summary>
     /// Creates an order, confirms it starts <c>Pending</c>, cancels it, and confirms a

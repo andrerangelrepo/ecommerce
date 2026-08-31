@@ -12,16 +12,11 @@ namespace ECommerce.IntegrationTests;
 /// file logs in as a setup step, but none of them asserts the login endpoint's own
 /// behavior for invalid credentials — that scenario has no coverage anywhere else.
 /// </summary>
-public sealed class LoginIntegrationTests : IClassFixture<CustomWebApplicationFactory>
+/// <remarks>Initializes a new instance of the <see cref="LoginIntegrationTests"/> class.</remarks>
+/// <param name="factory">The API factory providing the in-process test server.</param>
+public sealed class LoginIntegrationTests(CustomWebApplicationFactory factory) : IClassFixture<CustomWebApplicationFactory>
 {
-    private readonly HttpClient _client;
-
-    /// <summary>Initializes a new instance of the <see cref="LoginIntegrationTests"/> class.</summary>
-    /// <param name="factory">The API factory providing the in-process test server.</param>
-    public LoginIntegrationTests(CustomWebApplicationFactory factory)
-    {
-        _client = factory.CreateClient();
-    }
+    private readonly HttpClient _client = factory.CreateClient();
 
     /// <summary>The fixed user's real credentials must authenticate successfully.</summary>
     [Fact]
