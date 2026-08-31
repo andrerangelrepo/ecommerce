@@ -291,14 +291,6 @@ Erros HTTP utilizam o suporte nativo do ASP.NET Core a Problem Details, seguindo
 
 A API utiliza o mecanismo nativo `IExceptionHandler` do ASP.NET Core. Exceções atravessam um único ponto de tradução para Problem Details, são registradas com o contexto da requisição e recebem um `traceId` para correlação. Falhas do FluentValidation e falhas de binding do Minimal API (`BadHttpRequestException`) produzem HTTP 400; regra de negócio violada (`OrderCannotBeCancelledException`) produz 409; falhas inesperadas não expõem detalhes internos e produzem HTTP 500. Os endpoints permanecem focados na adaptação HTTP, sem blocos `try/catch` repetidos.
 
-### Por que CQRS?
-
-Separação clara entre operações de leitura (Queries) e escrita (Commands), facilitando testes, escalabilidade e manutenção.
-
-### Por que FluentValidation via Pipeline Behavior?
-
-Validação centralizada e reutilizável. Todos os Commands/Queries passam pelo mesmo pipeline, garantindo consistência.
-
 ### Por que Central Package Management?
 
 Simplifica manutenção de versões em projetos multi-camadas. Uma única fonte de verdade em `Directory.Packages.props`.
