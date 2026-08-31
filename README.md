@@ -4,6 +4,7 @@ Backend API para um e-commerce simples, implementado em .NET 10 com Clean Archit
 
 ## Sumário
 
+- [Fluxo Rápido de Avaliação](#fluxo-rápido-de-avaliação)
 - [Arquitetura](#arquitetura)
 - [Stack Técnico](#stack-técnico)
 - [Como Rodar — Passo a Passo](#como-rodar--passo-a-passo)
@@ -12,11 +13,45 @@ Backend API para um e-commerce simples, implementado em .NET 10 com Clean Archit
 - [Migrations](#migrations)
 - [Testes](#testes)
 - [Decisões Técnicas](#decisões-técnicas)
+- [Trade-offs](#trade-offs)
+- [Assumptions](#assumptions)
 - [Observability](#observability)
 - [Análise Estática (Sonar)](#análise-estática-sonar)
-- [Status do Projeto e Trade-offs Conscientes](#status-do-projeto-e-trade-offs-conscientes)
+- [Checklist de Requisitos do Desafio](#checklist-de-requisitos-do-desafio)
+- [Possíveis Melhorias](#possíveis-melhorias)
 - [Notas de Segurança](#notas-de-segurança)
 - [Relatório de Hardening](docs/hardening-report.md)
+
+## Fluxo Rápido de Avaliação
+
+Para quem só quer confirmar rapidamente que tudo funciona, sem ler o resto do README ainda:
+
+```bash
+docker compose up --build
+```
+
+```bash
+# 1. login → 200, copiar accessToken da resposta
+curl -s -X POST http://localhost:8080/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"dev@martech.com","password":"Senha@123"}'
+
+# 2. criar pedido → 201, status Pending
+curl -s -X POST http://localhost:8080/api/orders -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"11111111-1111-1111-1111-111111111111","items":[{"productName":"Teclado","quantity":1,"unitPrice":350}]}'
+
+# 3. listar → 200
+curl -s "http://localhost:8080/api/orders?page=1&pageSize=10" -H "Authorization: Bearer <token>"
+
+# 4. cancelar (troque {id} pelo id retornado no passo 2) → 200, status Cancelled
+curl -s -X PATCH http://localhost:8080/api/orders/{id}/cancel -H "Authorization: Bearer <token>"
+```
+
+```bash
+dotnet test   # 64 testes (50 unitários + 14 de integração), 0 falhas
+```
+
+O passo a passo completo — com todos os campos, todos os status HTTP possíveis e explicação de cada decisão — está nas seções abaixo, começando por [Como Rodar — Passo a Passo](#como-rodar--passo-a-passo). O catálogo completo de cenários (`curl` + resposta esperada para cada status) está em [docs/manual-testing-guide.md](docs/manual-testing-guide.md).
 
 ## Arquitetura
 
@@ -53,7 +88,7 @@ Application + Infrastructure ← Api
 - **Entity Framework Core 9.0** — persistência (SQLite)
 - **JWT Bearer** — autenticação stateless, usuário fixo em memória
 - **OpenAPI nativo + Swagger UI** — contrato gerado pelo ASP.NET Core com interface interativa em Development
-- **xUnit + Moq + FluentAssertions** — testes unitários e de integração (50 testes)
+- **xUnit + Moq + FluentAssertions** — testes unitários e de integração (64 testes)
 - **Docker + Docker Compose** — build multi-stage, persistência via volume nomeado
 - **Central Package Management (CPM)** — versionamento centralizado
 
@@ -200,6 +235,10 @@ docker compose down -v            # para e APAGA o volume (reset completo — ú
 ```
 
 `docker-compose.yml` sobrescreve `Jwt:Key` via variável de ambiente (`Jwt__Key`) com um valor de desenvolvimento — nunca use esse valor em produção. Fora do Docker, `dotnet run` usa o placeholder de `appsettings.json`. O container roda como usuário não-root (`app`, uid 1654) e expõe um health check em `GET /health` (`docker compose ps` mostra `(healthy)`).
+
+### Resetar o banco local
+
+Fora do Docker (`docker compose down -v` cobre o caso do container), resetar o banco é manual: pare a aplicação e apague `src/ECommerce.API/orders.db` (e `orders.db-shm`/`orders.db-wal`, se existirem). As migrations recriam o schema automaticamente no próximo `dotnet run` — nenhum comando adicional é necessário.
 
 ## Autenticação
 
@@ -399,6 +438,24 @@ Numa auditoria de log posterior, rodando a aplicação e fazendo requisições r
 
 `Activity.StartTime` no dump do OpenTelemetry é sempre UTC (padrão do `System.Diagnostics.Activity`, não configurável) — enquanto o `Timestamp` do Serilog já era hora local desde sempre. Sentados um do lado do outro no console, isso parece "duas horas diferentes" quando na real são o mesmo instante em fusos diferentes (confirmado comparando com `Get-Date`/`Get-TimeZone` do sistema — o Serilog sempre esteve certo). `{Timestamp:HH:mm:ss zzz}` deixa o offset explícito (`03:19:20 -03:00`), removendo a ambiguidade sem mudar o fuso usado em lugar nenhum.
 
+## Trade-offs
+
+Decisões que trocam conscientemente uma qualidade por outra:
+
+- **SQLite** — adequado ao escopo do desafio e simples de rodar sem infraestrutura extra; um banco cliente-servidor (PostgreSQL/SQL Server) seria mais apropriado para concorrência alta ou múltiplas instâncias da API.
+- **Usuário fixo em memória** — o desafio pede autenticação simples com uma única credencial; um provider completo (ASP.NET Core Identity) seria overengineering para esse escopo.
+- **Sem controle de concorrência otimista no cancelamento** — `OrderRepository.UpdateAsync` não usa `rowversion`/concurrency token. Nenhum requisito atual envolve múltiplos clientes cancelando o mesmo pedido simultaneamente; detalhes em [Decisões Técnicas](#por-que-não-tratar-concorrência-no-cancelamento).
+- **Console Exporter do OpenTelemetry** — adequado para demonstração e depuração local; um coletor real (Jaeger/Grafana/Prometheus via OTLP) seria a escolha de produção. A configuração (`OpenTelemetry:Otlp`) já existe, desligada por padrão — só precisa de um endpoint real.
+- **Sem `PagedResult<T>` genérico** — só existe um caso de listagem paginada hoje; generalizar antes de um segundo consumidor seria design especulativo. Detalhes em [Decisões Técnicas](#por-que-não-criar-pagedresultt).
+
+## Assumptions
+
+Decisões tomadas em pontos onde o enunciado do desafio não foi explícito:
+
+- **Status inicial do pedido**: o enunciado lista `Pending` como um dos valores possíveis de `Status`, mas não define explicitamente qual é o status de um pedido recém-criado — assumimos `Pending`, coerente com o fluxo esperado (criar → cancelar).
+- **Ordenação da listagem**: `GET /api/orders` retorna os pedidos ordenados por `CreatedAt` decrescente (mais recentes primeiro) — não especificado no enunciado.
+- **Defaults de paginação**: `page=1` e `pageSize=10` quando omitidos, seguindo o próprio exemplo do enunciado (`?page=1&pageSize=10`); não há limite superior de `pageSize`, apenas a exigência de ser maior que zero.
+
 ## Observability
 
 O projeto tem três pilares de observabilidade, cada um com uma responsabilidade distinta:
@@ -425,22 +482,42 @@ O que já está pronto:
 
 **Enquanto isso**, uma auditoria manual completa foi feita cobrindo as mesmas categorias que o Sonar analisaria (bugs, vulnerabilidades, security hotspots, code smells, nullability, exception handling, async, duplicação, etc.) — resultado em [`docs/sonar-audit.md`](docs/sonar-audit.md).
 
-## Status do Projeto e Trade-offs Conscientes
+## Checklist de Requisitos do Desafio
 
-Todos os itens da **Stack Obrigatória** do desafio estão implementados: domínio, CQRS/MediatR, EF Core + SQLite com migrations automáticas, JWT, FluentValidation via pipeline, testes unitários dos 4 Handlers, Docker + Docker Compose, e este README.
+### Stack Obrigatória
 
-Os itens listados como **"Desejável — Não Eliminatório"** no enunciado receberam este tratamento:
+| Requisito | Status |
+|---|:---:|
+| .NET 10 | ✅ |
+| Clean Architecture (`Domain`/`Application`/`Infrastructure`/`API`) | ✅ |
+| CQRS + MediatR (Commands e Queries separados) | ✅ |
+| EF Core + SQLite | ✅ |
+| Migrations aplicadas automaticamente no startup | ✅ |
+| Autenticação JWT (login + usuário fixo em memória) | ✅ |
+| FluentValidation via Pipeline Behavior | ✅ |
+| xUnit — testes unitários dos Handlers | ✅ |
+| Docker (`Dockerfile` + `docker-compose.yml`) | ✅ |
+| README (execução local + Docker) | ✅ |
 
-| Item | Status |
+### Desejável — Não Eliminatório
+
+| Requisito | Status |
 |---|---|
-| Testes de integração com `WebApplicationFactory` | ✅ Implementado — 13 testes, cobrindo `POST`/`GET`/`PATCH` e login |
-| Logging com Serilog + `LoggingBehavior` | ✅ Implementado — ver [Observability](#observability) |
-| OpenTelemetry (traces + métricas) | ✅ Implementado — ver [Observability](#observability) |
-| SonarQube / `dotnet-sonarscanner` | ❌ Não implementado |
+| Logging com Serilog + Pipeline Behavior | ✅ Implementado — ver [Observability](#observability) |
+| Testes de integração com `WebApplicationFactory` | ✅ Implementado — 14 testes, cobrindo `POST`/`GET`/`PATCH` e login |
+| OpenTelemetry com exportação para console | ✅ Implementado — ver [Observability](#observability) |
+| SonarQube / `dotnet-sonarscanner` | ⚠️ Infraestrutura pronta (CI, coverage, exclusões, auditoria manual); análise real depende de uma conta SonarCloud conectada — ver [Análise Estática](#análise-estática-sonar) |
 
-Essa ausência é rastreada com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/pendencias.md`](docs/pendencias.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
+Essa pendência é rastreada com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/sonar-audit.md`](docs/sonar-audit.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
 
 Uma auditoria de hardening arquitetural dedicada (build, testes, camadas, persistência, segurança, Docker) foi conduzida ao final da implementação — resultado consolidado em [`docs/hardening-report.md`](docs/hardening-report.md).
+
+## Possíveis Melhorias
+
+- Refresh token (hoje o JWT expira em 60 min, sem renovação).
+- Coletor OTLP real (Jaeger/Grafana) em vez do Console Exporter, para observabilidade em produção.
+- Controle de concorrência otimista (`rowversion`) no cancelamento de pedidos.
+- Quality Gate real do SonarCloud — infraestrutura pronta, falta conectar a conta (ver [Checklist de Requisitos](#checklist-de-requisitos-do-desafio)).
 
 ## Notas de Segurança
 

@@ -10,7 +10,7 @@ Enquanto uma conta real não é conectada, este documento registra uma **revisã
 TASK 16 — Static Analysis (auditoria manual)
 
 Build:            ✅ 0 Aviso(s), 0 Erro(s) (Debug e Release)
-Tests:             ✅ 63/63 aprovados
+Tests:             ✅ 64/64 aprovados (63 no início da auditoria; ver "Cobertura — detalhamento")
 
 Bugs:              0 encontrados
 Vulnerabilities:   0 encontradas

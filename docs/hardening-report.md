@@ -2,6 +2,8 @@
 
 Consolidação da auditoria de hardening arquitetural (SUBTASKs 13.1–13.75): cada item abaixo foi verificado empiricamente — build real, teste real, ou requisição HTTP real contra a aplicação em execução — não apenas por leitura de código. O detalhamento de cada verificação está no histórico da conversa; este documento reúne o resultado final.
 
+> **Nota:** este é um retrato do estado do projeto no momento da TASK 13 (57 testes; Serilog, OpenTelemetry e Sonar ainda não implementados). Serilog e OpenTelemetry foram implementados nas TASKs 14 e 15 (ver [README → Observability](../README.md#observability)); a infraestrutura de análise estática foi preparada na TASK 16 (ver [`docs/sonar-audit.md`](sonar-audit.md)). O total de testes hoje é 64. Os números abaixo são mantidos como registro histórico da rodada de hardening, não como estado atual.
+
 ```
 TASK 13 — Hardening Final
 
@@ -41,10 +43,12 @@ Docker:
 Warnings:
 ✅ 0 — build Debug e Release, ambos 0 Aviso(s)
 
-Pendências:
-Nenhuma pendência obrigatória. Restam só os 3 itens "Desejáveis — não eliminatórios"
-já documentados em docs/pendencias.md (Serilog+LoggingBehavior, SonarQube, OpenTelemetry) —
-deliberadamente fora do escopo, não gaps.
+Pendências (à época da TASK 13):
+Nenhuma pendência obrigatória. Restavam só os 3 itens "Desejáveis — não eliminatórios"
+do enunciado (Serilog+LoggingBehavior, SonarQube, OpenTelemetry) — deliberadamente fora
+do escopo até então, não gaps. Serilog e OpenTelemetry foram implementados logo em
+seguida (TASKs 14/15); só a análise Sonar real segue pendente de conta externa — ver
+docs/sonar-audit.md.
 ```
 
 ## Evidência por seção
@@ -98,8 +102,8 @@ Repetido também em `-c Release`, mesmo resultado (57/57).
 
 `dotnet build` e `dotnet build -c Release`: **0 Aviso(s)** em ambos. Os avisos `NU1903` (vulnerabilidade transitiva do SQLite) foram eliminados fixando `SQLitePCLRaw.lib.e_sqlite3` na SUBTASK 13.20.
 
-### Pendências
+### Pendências (à época da TASK 13)
 
-A única pendência genuína encontrada durante o hardening — o README não documentava `docker build` como comando isolado, só via `docker compose up --build` — foi fechada nesta mesma rodada (ver `docs/pendencias.md`, seção 2).
+A única pendência genuína encontrada durante o hardening — o README não documentava `docker build` como comando isolado, só via `docker compose up --build` — foi fechada nesta mesma rodada.
 
-Os únicos itens não implementados no projeto inteiro são os 3 "Desejáveis — não eliminatórios" do enunciado (Serilog + `LoggingBehavior`, SonarQube, OpenTelemetry), documentados em detalhe em [`docs/pendencias.md`](pendencias.md) como decisão consciente de escopo, não como gap descoberto.
+Os únicos itens não implementados no projeto até a TASK 13 eram os 3 "Desejáveis — não eliminatórios" do enunciado (Serilog + `LoggingBehavior`, SonarQube, OpenTelemetry), como decisão consciente de escopo, não como gap descoberto. Serilog (TASK 14) e OpenTelemetry (TASK 15) já foram implementados desde então — ver [README → Observability](../README.md#observability). A análise Sonar real segue dependendo de uma conta SonarCloud externa; a infraestrutura e uma auditoria manual equivalente estão documentadas em [`docs/sonar-audit.md`](sonar-audit.md).
