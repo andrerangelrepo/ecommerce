@@ -1,6 +1,7 @@
 using ECommerce.API.Contracts.Orders;
 using ECommerce.Application.Features.Orders.Commands.CreateOrder;
 using MediatR;
+using Microsoft.AspNetCore.Routing;
 
 namespace ECommerce.API.Endpoints.Orders;
 
@@ -9,6 +10,7 @@ internal static class CreateOrderEndpoint
     internal static async Task<IResult> HandleAsync(
         CreateOrderRequest request,
         ISender sender,
+        LinkGenerator linkGenerator,
         CancellationToken cancellationToken)
     {
         var items = request.Items?
@@ -31,8 +33,10 @@ internal static class CreateOrderEndpoint
             result.CreatedAt,
             result.TotalAmount);
 
-        return Results.Created(
-            $"/api/orders/{result.Id}",
-            response);
+        var location = linkGenerator.GetPathByName(
+            GetOrderByIdEndpoint.RouteName,
+            new { id = result.Id });
+
+        return Results.Created(location, response);
     }
 }

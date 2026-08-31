@@ -76,6 +76,17 @@ public sealed class CancelOrderIntegrationTests : IClassFixture<CustomWebApplica
         orderAfterSecondAttempt!.Status.Should().Be("Cancelled");
     }
 
+    /// <summary>Cancelling an id that matches no order returns 404, not a conflict or a crash.</summary>
+    [Fact]
+    public async Task CancelOrder_ShouldReturnNotFound_WhenOrderDoesNotExist()
+    {
+        await AuthenticateAsync();
+
+        var response = await _client.PatchAsync($"/api/orders/{Guid.NewGuid()}/cancel", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private async Task<Guid> CreateOrderAsync()
     {
         var createResponse = await _client.PostAsJsonAsync(

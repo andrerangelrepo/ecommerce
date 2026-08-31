@@ -14,6 +14,7 @@ Backend API para um e-commerce simples, implementado em .NET 10 com Clean Archit
 - [Decisões Técnicas](#decisões-técnicas)
 - [Status do Projeto e Trade-offs Conscientes](#status-do-projeto-e-trade-offs-conscientes)
 - [Notas de Segurança](#notas-de-segurança)
+- [Relatório de Hardening](docs/hardening-report.md)
 
 ## Arquitetura
 
@@ -190,9 +191,10 @@ Detalhes de cada modalidade de teste em [Testes](#testes).
 ### Docker em detalhe
 
 ```bash
-docker compose up --build   # sobe, aplicando migrations automaticamente
-docker compose down         # para o container, MANTÉM o volume (dados persistem)
-docker compose down -v      # para e APAGA o volume (reset completo — útil pra testar a primeira inicialização de novo)
+docker build -t ecommerce-api .   # builda só a imagem, sem subir nada (útil pra inspecionar/CI)
+docker compose up --build         # builda (se preciso) e sobe, aplicando migrations automaticamente
+docker compose down               # para o container, MANTÉM o volume (dados persistem)
+docker compose down -v            # para e APAGA o volume (reset completo — útil pra testar a primeira inicialização de novo)
 ```
 
 `docker-compose.yml` sobrescreve `Jwt:Key` via variável de ambiente (`Jwt__Key`) com um valor de desenvolvimento — nunca use esse valor em produção. Fora do Docker, `dotnet run` usa o placeholder de `appsettings.json`. O container roda como usuário não-root (`app`, uid 1654) e expõe um health check em `GET /health` (`docker compose ps` mostra `(healthy)`).
@@ -235,12 +237,12 @@ Requer a ferramenta `dotnet-ef` instalada (`dotnet tool install --global dotnet-
 
 ## Testes
 
-**50 testes no total**, divididos em dois projetos com propósitos diferentes:
+**57 testes no total**, divididos em dois projetos com propósitos diferentes:
 
 | Projeto | Testes | O que cobre | Velocidade |
 |---|---:|---|---|
-| `ECommerce.Application.Tests` | 42 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior` | Rápido — sem I/O real, sem HTTP |
-| `ECommerce.IntegrationTests` | 8 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
+| `ECommerce.Application.Tests` | 44 | Domínio (invariantes de `Order`/`OrderItem`), os 4 Handlers (com `Mock<IOrderRepository>`), Validators (`FluentValidation`), `ValidationBehavior` | Rápido — sem I/O real, sem HTTP |
+| `ECommerce.IntegrationTests` | 13 | Fluxos HTTP completos via `WebApplicationFactory` (JWT + MediatR + EF Core + SQLite real), incluindo login, os 404 dos dois endpoints e o mapeamento EF Core (`Order`↔`OrderItem`) | Mais lento — sobe a aplicação real |
 
 Nenhum teste depende de banco local pré-existente ou de outro processo já rodando — `dotnet test` sozinho é suficiente, cada teste de integração usa um SQLite isolado descartável.
 
@@ -310,6 +312,10 @@ Os testes de Handler (Moq) provam que `UpdateAsync` foi chamado, mas não provam
 
 `GetOrderByIdQueryHandler` retorna `GetOrderByIdResult?` e devolve `null` quando o pedido não existe, sem `OrderNotFoundException` nem qualquer outro tipo de exceção. Não encontrar um registro é um resultado normal de uma consulta, não uma falha excepcional. A tradução `null → 404 Not Found` é responsabilidade do endpoint HTTP, mantendo a Application indiferente a códigos de status, do mesmo jeito que já é indiferente a JWT.
 
+### Por que o 404 de pedido inexistente usa `ProblemDetails` em vez de `Results.NotFound()`?
+
+`Results.NotFound()` produz um `404` com corpo vazio (`Content-Length: 0`), sem `Content-Type`, diferente do formato `application/problem+json` retornado por todos os outros erros (400, 409, 500) via `GlobalExceptionHandler`. Como esse `404` não passa por exceção — é um `null` de Query/Command traduzido diretamente no endpoint —, ele nunca alcança o `GlobalExceptionHandler`. `OrderNotFoundProblem.Result(httpContext)` (`src/ECommerce.API/ExceptionHandling/OrderNotFoundProblem.cs`) monta o mesmo formato `ProblemDetails` (`type`, `title`, `status`, `traceId`) usado nos demais erros, mantendo o contrato de erro da API consistente independentemente de a resposta ter passado por uma exceção ou não. É um helper específico para este caso conhecido — não um envelope genérico de resposta.
+
 ### Por que `OrderCannotBeCancelledException` vira 409 e não 400?
 
 `400 Bad Request` indicaria problema no formato ou nos dados da requisição em si. Não é o caso aqui: o request é válido, o pedido existe, mas o estado atual dele (`Cancelled`/`Confirmed`) é incompatível com a operação pedida — request válido + recurso existente + estado incompatível é exatamente a definição de conflito. `409 Conflict` comunica isso de forma mais expressiva do que um `400` genérico.
@@ -346,12 +352,14 @@ Os itens listados como **"Desejável — Não Eliminatório"** no enunciado rece
 
 | Item | Status |
 |---|---|
-| Testes de integração com `WebApplicationFactory` | ✅ Implementado — 8 testes, cobrindo `POST`/`GET`/`PATCH` |
-| Logging com Serilog + `LoggingBehavior` | ❌ Não implementado. Pacotes já referenciados no `.csproj`, mas nunca ligados — decisão consciente de priorizar o restante do escopo obrigatório |
+| Testes de integração com `WebApplicationFactory` | ✅ Implementado — 13 testes, cobrindo `POST`/`GET`/`PATCH` e login |
+| Logging com Serilog + `LoggingBehavior` | ❌ Não implementado — decisão consciente de priorizar o restante do escopo obrigatório. Os pacotes não usados foram removidos do projeto (não ficam como peso morto); reinstalar é trivial se este item for retomado |
 | SonarQube / `dotnet-sonarscanner` | ❌ Não implementado |
 | OpenTelemetry | ❌ Não implementado |
 
 Essas três ausências são rastreadas com detalhe (incluindo o porquê e o que falta exatamente) em [`docs/pendencias.md`](docs/pendencias.md) — mantido como registro honesto do que foi deliberadamente deixado de fora, não como lista de bugs.
+
+Uma auditoria de hardening arquitetural dedicada (build, testes, camadas, persistência, segurança, Docker) foi conduzida ao final da implementação — resultado consolidado em [`docs/hardening-report.md`](docs/hardening-report.md).
 
 ## Notas de Segurança
 

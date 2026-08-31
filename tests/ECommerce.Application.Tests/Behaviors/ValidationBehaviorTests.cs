@@ -66,6 +66,62 @@ public sealed class ValidationBehaviorTests
         result.Should().Be("handled");
     }
 
+    /// <summary>CT-BEHAVIOR-03: verifies every registered validator runs and their failures are merged.</summary>
+    [Fact]
+    public async Task Handle_ShouldRunAllValidatorsAndMergeFailures_WhenMultipleValidatorsFail()
+    {
+        var firstValidator = new Mock<IValidator<TestRequest>>();
+        firstValidator
+            .Setup(validator => validator.ValidateAsync(
+                It.IsAny<ValidationContext<TestRequest>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ValidationResult(
+                [new ValidationFailure("Value", "First validator failed.")]));
+
+        var secondValidator = new Mock<IValidator<TestRequest>>();
+        secondValidator
+            .Setup(validator => validator.ValidateAsync(
+                It.IsAny<ValidationContext<TestRequest>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ValidationResult(
+                [new ValidationFailure("Value", "Second validator failed.")]));
+
+        var behavior = new ValidationBehavior<TestRequest, string>(
+            [firstValidator.Object, secondValidator.Object]);
+
+        var act = () => behavior.Handle(
+            new TestRequest("x"),
+            () => Task.FromResult("handled"),
+            CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<ValidationException>();
+        exception.Which.Errors.Select(error => error.ErrorMessage)
+            .Should().BeEquivalentTo("First validator failed.", "Second validator failed.");
+    }
+
+    /// <summary>CT-BEHAVIOR-04: verifies the incoming CancellationToken is forwarded to every validator.</summary>
+    [Fact]
+    public async Task Handle_ShouldForwardCancellationToken_ToValidator()
+    {
+        _validator
+            .Setup(validator => validator.ValidateAsync(
+                It.IsAny<ValidationContext<TestRequest>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ValidationResult());
+
+        var behavior = new ValidationBehavior<TestRequest, string>([_validator.Object]);
+        using var cancellationTokenSource = new CancellationTokenSource();
+
+        await behavior.Handle(
+            new TestRequest("x"),
+            () => Task.FromResult("handled"),
+            cancellationTokenSource.Token);
+
+        _validator.Verify(validator => validator.ValidateAsync(
+            It.IsAny<ValidationContext<TestRequest>>(),
+            cancellationTokenSource.Token));
+    }
+
     /// <summary>
     /// A minimal request used only to exercise <see cref="ValidationBehavior{TRequest,TResponse}"/>.
     /// Must be at least as accessible as the mocked <see cref="IValidator{T}"/>, or Castle's

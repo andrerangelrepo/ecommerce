@@ -22,7 +22,7 @@ Marcar `[x]` conforme cada item for implementado.
 ## 2. README — instruções de execução via Docker (Stack Obrigatória)
 
 - [x] Seção "Executar com Docker" no README ([README.md](../README.md))
-  - [ ] comando de build da imagem isolado (`docker build`) — hoje só documentado via `docker compose up --build`, que já builda e sobe junto
+  - [x] comando de build da imagem isolado (`docker build -t ecommerce-api .`), além do `docker compose up --build`
   - [x] comando de subida via `docker compose`, incluindo a diferença entre `down` e `down -v`
   - [x] variáveis de ambiente necessárias (`Jwt__Key`) e como fornecê-las
 
@@ -37,7 +37,7 @@ Marcar `[x]` conforme cada item for implementado.
 ## 4. Desejáveis — não eliminatórios
 
 - [ ] Logging com Serilog
-  - [ ] `UseSerilog()` configurado em `Program.cs` (pacotes já referenciados no `.csproj`, mas não usados)
+  - [ ] `UseSerilog()` configurado em `Program.cs` — os pacotes (`Serilog`, `Serilog.Sinks.Console`) foram **removidos** de `Directory.Packages.props`/`ECommerce.Infrastructure.csproj` na TASK 13 (SUBTASK 13.21, hardening) por estarem referenciados sem nenhum uso real; reinstalar (`dotnet add package Serilog`) é trivial se/quando este item for implementado
   - [ ] `LoggingBehavior` no pipeline do MediatR, registrando:
     - [ ] Command/Query recebido
     - [ ] Response

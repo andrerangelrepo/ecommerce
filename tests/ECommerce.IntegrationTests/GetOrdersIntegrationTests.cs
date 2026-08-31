@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ECommerce.API.Contracts.Auth;
+using ECommerce.API.Contracts.Orders;
 using ECommerce.IntegrationTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +27,20 @@ public sealed class GetOrdersIntegrationTests : IClassFixture<CustomWebApplicati
     public GetOrdersIntegrationTests(CustomWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
+    }
+
+    /// <summary>A valid request returns 200 with the paginated shape, even with no orders yet.</summary>
+    [Fact]
+    public async Task GetOrders_ShouldReturnOk_WithValidPagination()
+    {
+        await AuthenticateAsync();
+
+        var response = await _client.GetAsync("/api/orders?page=1&pageSize=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<GetOrdersResponse>();
+        body!.Page.Should().Be(1);
+        body.PageSize.Should().Be(10);
     }
 
     /// <summary>A non-numeric <c>page</c> must return 400, not 500.</summary>

@@ -1,4 +1,5 @@
 using ECommerce.API.Contracts.Orders;
+using ECommerce.API.ExceptionHandling;
 using ECommerce.Application.Features.Orders.Commands.CancelOrder;
 using MediatR;
 
@@ -9,13 +10,14 @@ internal static class CancelOrderEndpoint
     internal static async Task<IResult> HandleAsync(
         Guid id,
         ISender sender,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var result = await sender.Send(new CancelOrderCommand(id), cancellationToken);
 
         if (result is null)
         {
-            return Results.NotFound();
+            return OrderNotFoundProblem.Result(httpContext);
         }
 
         var response = new CancelOrderResponse(

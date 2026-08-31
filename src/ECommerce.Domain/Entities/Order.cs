@@ -63,7 +63,7 @@ public class Order
 
     /// <summary>Gets the total amount calculated from the order items.</summary>
     public decimal TotalAmount =>
-        _items.Sum(item => item.UnitPrice * item.Quantity);
+        _items.Sum(item => item.TotalPrice);
 
     /// <summary>Creates and adds an item to the order.</summary>
     /// <param name="productName">The product name.</param>

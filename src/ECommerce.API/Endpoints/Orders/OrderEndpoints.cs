@@ -19,7 +19,8 @@ public static class OrderEndpoints
 
         group.MapPost(string.Empty, CreateOrderEndpoint.HandleAsync);
         group.MapGet(string.Empty, GetOrdersEndpoint.HandleAsync);
-        group.MapGet("/{id:guid}", GetOrderByIdEndpoint.HandleAsync);
+        group.MapGet("/{id:guid}", GetOrderByIdEndpoint.HandleAsync)
+            .WithName(GetOrderByIdEndpoint.RouteName);
         group.MapPatch("/{id:guid}/cancel", CancelOrderEndpoint.HandleAsync);
 
         return endpoints;
