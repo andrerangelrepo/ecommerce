@@ -1,0 +1,28 @@
+namespace ECommerce.API.Endpoints.Orders;
+
+/// <summary>
+/// Maps HTTP endpoints for orders.
+/// </summary>
+public static class OrderEndpoints
+{
+    /// <summary>
+    /// Maps all order endpoints under the <c>/api/orders</c> route group.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder.</param>
+    /// <returns>The same endpoint route builder for chaining.</returns>
+    public static IEndpointRouteBuilder MapOrderEndpoints(
+        this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints
+            .MapGroup("/api/orders")
+            .RequireAuthorization();
+
+        group.MapPost(string.Empty, CreateOrderEndpoint.HandleAsync);
+        group.MapGet(string.Empty, GetOrdersEndpoint.HandleAsync);
+        group.MapGet("/{id:guid}", GetOrderByIdEndpoint.HandleAsync)
+            .WithName(GetOrderByIdEndpoint.RouteName);
+        group.MapPatch("/{id:guid}/cancel", CancelOrderEndpoint.HandleAsync);
+
+        return endpoints;
+    }
+}

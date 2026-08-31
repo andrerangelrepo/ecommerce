@@ -1,0 +1,76 @@
+name: Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  build-test-sonar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # SonarCloud's new-code analysis and blame info need full git history.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Check whether Sonar is configured
+        id: sonar-check
+        run: echo "enabled=${{ secrets.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      # Java is only needed to run the Sonar scanner itself — the build/test steps below
+      # don't depend on it, so build+test still runs green even without a Sonar account.
+      - name: Setup Java (for SonarScanner)
+        if: steps.sonar-check.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install SonarScanner
+        if: steps.sonar-check.outputs.enabled == 'true'
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Sonar begin
+        if: steps.sonar-check.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          dotnet-sonarscanner begin
+          /k:"andrerangelrepo_ecommerce"
+          /o:"andrerangelrepo"
+          /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+          /d:sonar.exclusions="**/Migrations/**,**/bin/**,**/obj/**"
+          /d:sonar.coverage.exclusions="**/Migrations/**,**/Program.cs,**/API/Contracts/**,**/Application/Features/**/DTOs/**,**/*Options.cs"
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test with coverage
+        run: >
+          dotnet test --no-build -c Release
+          --settings tests/coverlet.runsettings
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+
+      - name: Sonar end
+        if: steps.sonar-check.outputs.enabled == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+      - name: Sonar not configured
+        if: steps.sonar-check.outputs.enabled != 'true'
+        run: echo "SONAR_TOKEN secret not set — skipping Sonar analysis. Build and tests above are unaffected."
